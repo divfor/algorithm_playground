@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Turns a pcap file with http gzip compressed data into plain text, making it
-# easier to follow.
+# https://dpkt.readthedocs.io/en/latest/_modules/dpkt/pcap.html
 
 import socket 
 import dpkt
