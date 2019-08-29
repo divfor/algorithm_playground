@@ -14,11 +14,12 @@ def last_bloom_filter(bf_list, total_added):
     if total_added > bf.capacity * len(bf_list):
         bf = open_bloom_filter('tmp_%d.bloom' % (len(bf_list)+1), 200000000)
         bf_list.append(bf)
-    return bf_list[-1]
+    return bf_list[-1]ß
 
 def inc_hash_counter(ht, ngram):
-    for f in HASHFUNCS:
-        hv = f(ngram)
+    hash_add_tries += 1
+    for pad in ['abc','def','000']:
+        hv = hash(base64(ngram) + f)
         i = hv % HASHLEN
         if ht[i][0] == 0:
             ht[i][0] = 2
@@ -38,7 +39,8 @@ def train_filter_reduce_ngrams(bf, bfname, payloads, skip_filters, n=5, stopping
     bf_tmp = tmp_bf_list[-1]
     max_unique_ngrams = 256 ** n
 
-    ht = np.zeros(10**8, dtype=np.dtype([('count', '<i2'), ('ngram', np.byte, n)]))
+    #ht = np.zeros(10**8, dtype=np.dtype([('count', '<i2'), ('ngram', np.byte, n)]))
+    ht = np.zeros(10**8,dtype=np.uint64)
     #ht.dump("filename.db")
 
     for payload in tqdm(payloads):
