@@ -14,46 +14,45 @@ def last_bloom_filter(bf_list, total_added):
     if total_added > bf.capacity * len(bf_list):
         bf = open_bloom_filter('tmp_%d.bloom' % (len(bf_list)+1), 200000000)
         bf_list.append(bf)
-    return bf_list[-1]ß
+    return bf_list[-1]
 
-def inc_hash_counter(ht, ngram):
+def inc_hash_counter(ht, ngram): # bytes == type(ngram)
     hash_add_tries += 1
-    for pad in ['abc','def','000']:
-        hv = hash(base64(ngram) + f)
-        i = hv % HASHLEN
-        if ht[i][0] == 0:
-            ht[i][0] = 2
-            ht[i][1] = ngram
-            break
-        else:
-            if ht[i][1] == ngram:
+    for pad in ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']:
+        i = hash(ngram.hex() + f) % HASHLEN
+        if h[i][1] == ngram:
+            if (ht[i][0] < 65535):
                 ht[i][0] += 1
-                break
             else:
+                conter_overflow += 1
+        else:
+            if h[i][0] > 0: # 0 could be 2,3,4,... to kick-off low-freq ngrams
                 hash_collision += 1
-
-def train_filter_reduce_ngrams(bf, bfname, payloads, skip_filters, n=5, stopping_threshold=100,max_wins = 100):                        
-    # global cnt,si
+                continue # try other hash positions
+            else:
+                h[i][0], h[i][1] = 2, ngram
+         break
+   
+def train_bloom_filter(bf, bfname, payloads, skip_filters, n=5, stopping_threshold=100,max_wins=100):
     global add_ok, add_fail, add_skipped, ngrams
-    global add_tmp_ok, add_tmp_fail, cnt_tmp, pre_add_ok
-    bf_tmp = tmp_bf_list[-1]
+    global add_tmp_ok, add_tmp_fail, pre_add_ok
+    global hash_add_tries, hash_collision, conter_overflow
     max_unique_ngrams = 256 ** n
 
-    #ht = np.zeros(10**8, dtype=np.dtype([('count', '<i2'), ('ngram', np.byte, n)]))
-    ht = np.zeros(10**8,dtype=np.uint64)
-    #ht.dump("filename.db")
+    dt = np.dtype([('count','u2'),('ngram',bytes,5)])
+    ht = np.zeros(10**8, dtype=dt)
 
     for payload in tqdm(payloads):
+        hex_string = payload.strip()
         try:
-            bts = ba.unhexlify(payload.strip()) # type(bts) == bytes
+            # bts = ba.unhexlify(hex_string) # type(bts) == bytes
+            bts = bytes.fromhex(hex_string)
         except:
             pass
         if len(bts) < n:
             continue
         num_wins = len(bts) - n + 1 # packet may be very large
-        if num_wins > max_wins:
-            num_wins = max_wins
-        for i in range(num_wins):
+        for i in range(min(num_wins, max_wins)):
             ngrams += 1
             ng = bts[i:i+n]
             if item_in_bloom_filters(ng, skip_filters):
@@ -73,36 +72,35 @@ def train_filter_reduce_ngrams(bf, bfname, payloads, skip_filters, n=5, stopping
             else:
                 add_tmp_fail += 1 #tmp_bf冲突个数，一般为0
 
+    ht.dump("hash_counters.npdb")
+
 
 def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
+    global add_ok, add_fail, add_skipped, ngrams 
+    global add_tmp_ok, add_tmp_fail
+    bf_list, tmp_bf_list = [], []
     print('Start to train %s, save in ./logs/%s_n%d' % (bfname,bfname[:-6],n))
-
     datapath = '/data/%s/payloads' % dataname
-    if 'gold' in bfname: datapath += '/gold'
-    elif 'normal' in bfname: datapath += '/normal'
+    if 'gold' in bfname:
+    	datapath += '/gold'
+    if 'normal' in bfname:
+	 datapath += '/normal'
     usedpath = datapath + '/' + 'used'
     recreate_folders('./logs','/data/bloomfilters/tmp')
     os.system('sudo mkdir -p %s' % usedpath)
 
-    fname_list = [fname for fname in os.listdir(datapath) if 'txt' in fname]
+    fnames = [fname for fname in os.listdir(datapath) if 'txt' in fname]
     bf = open_bloom_filter(bfname,capacity)
     bf_list.append(bf)
-    
-    global add_ok, add_fail, add_skipped, ngrams 
-    global add_tmp_ok, add_tmp_fail, cnt_tmp 
-    bf_tmp = open_bloom_filter('tmp_%d.bloom'%cnt_tmp,200000000)    
-    tmp_bf_list.append(bf_tmp)
-    
-    
-    for i, fname in enumerate(fname_list[:train_txt_num]):  
+    for i, fname in enumerate(fnames[:train_txt_num]):  
         payloads = open(datapath+'/'+fname).readlines()
         print(i+1, fname) 
         if 'gold' in bfname:
-            train_filter_reduce_ngrams(bf,bfname,payloads,[],n) 
+            train_bloom_filter(bf,bfname,payloads,[],n) 
         elif 'normal' in bfname: 
             train_normal_filter_reduce_ngrams(bfname, payloads,get_bloom_filters(['bad','normal'],bfname),get_bloom_filters(['bad'],bfname),n)
         elif 'bad' in bfname:
-            train_filter_reduce_ngrams(bf,bfname,payloads,get_bloom_filters(['gold'],bfname),n) 
+            train_bloom_filter(bf,bfname,payloads,get_bloom_filters(['gold'],bfname),n) 
         os.system('sudo mv -f %s %s/' % (datapath+'/'+fname,usedpath))
     close_bloom_filter(bf,add_skipped=add_skipped,add_ok=add_ok,add_fail=add_fail,add_tmp_ok=add_tmp_ok,
                         add_tmp_fail = add_tmp_fail, ngrams=ngrams) 
