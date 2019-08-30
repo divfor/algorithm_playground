@@ -19,7 +19,7 @@ def last_bloom_filter(bf_list, total_added):
 def inc_hash_counter(ht, ngram): # bytes == type(ngram)
     hash_add_tries += 1
     for pad in ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']:
-        i = hash(ngram.hex() + f) % HASHLEN
+        i = hash(ngram.hex() + pad) % HASHLEN
         if h[i][1] == ngram:
             if (ht[i][0] < 65535):
                 ht[i][0] += 1
