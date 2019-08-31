@@ -77,7 +77,8 @@ class NgramPacket(object):
         hash_dumpfile = "hash_counters.npy"
         hash_capacity = 7 + 10**8, 
         bloom_capacity = 10**8,
-        bloom_seen_split_capacity = 2 * 10**8
+        bloom_seen_split_capacity = 2 * 10**8,
+        hash_lowfreq_threshold = 0
       ):
         self.n = n # size for n-gram, default 5 bytes
         self.c = c # size for couter, default 2 bytes
@@ -86,9 +87,12 @@ class NgramPacket(object):
         self.hash_size = hash_capaicity
         self.bloom_capacity = bloom_capacity
         self.bloom_seen_split = bloom_seen_split_capacity
+        self.hash_lowfreq_threshold = hash_lowfreq_threshold
         self.hash_add_tries = 0
+        self.hash_relookups = 0
         self.hash_collision = 0
         self.conter_overflow = 0
+        self.hash_kickouts = 0
         self.add_ok = 0
         self.add_fail = 0
         self.add_skipped = 0
@@ -99,7 +103,8 @@ class NgramPacket(object):
         self.skip_bflist = []
         self.seen_bflist = []
         self.paddings = ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']
-        self.god_bloom_files = cmdget("ls god*.bloom")
+        self.idx_tail_padding = len(self.paddings)
+        self.gold_bloom_files = cmdget("ls gold*.bloom")
         self.bad_bloom_files = cmdget("ls bad*.bloom")
         self.normal_bloom_files = cmdget("ls normal*.bloom")
         try:
@@ -124,7 +129,7 @@ class NgramPacket(object):
 
     def hash_counts(self, ngram): # bytes type
         self.hash_add_tries += 1
-        for pad in self.paddings:
+        for k, pad in enumerate(self.paddings):
             i = hash(ngram.hex() + pad) % self.hash_size
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < 65535):
@@ -132,12 +137,16 @@ class NgramPacket(object):
                 else:
                     self.conter_overflow += 1
             else:
-                if self.ht[i][0] > 0: # 0 could be 2,3,4,... to kick-off low-freq ngrams
-                    self.hash_collision += 1
-                    continue # try other hash positions
+                if self.ht[i][0] > self.hash_lowfreq_threshold: # could be 0,2,3,4,... to kick-off low-freq ngrams
+                    if k < self.idx_tail_padding:
+                        self.hash_relookups += 1
+                        continue # try other hash positions
+                    self.hash_collision += 1                  
                 else:
                     self.ht[i][0] = 2
                     self.ht[i][1] = ngram
+                    if self.ht[i][0] > 0:
+                        self.hash_kickouts += 1
              break
    
     def train_bloom_filter(train_bloom, payloads):
