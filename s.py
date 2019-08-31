@@ -72,27 +72,87 @@ def count_in_bloom_filters(item, bf_list):
 def item_in_bloom_filters(item, bf_list):
     return any([item in bf for bf in bf_list])
 
+
+class HashProbabilisticCounters(object):
+    def __init__(self,
+    dumpfile = None, # np.load('x.npy') if file exists, instead of init()
+    lowfreq_threshold = 0, # under which bucket is overwritable
+    highfreq_threshold = 65535, # counter's ceiling
+    hash_size = 7+10**8, # hash table size
+    hash_dtype = np.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])
+    ):
+        self.hash_dtype = hash_dtype
+        self.hash_size = hash_size
+        self.lowfreq_threshold = lowfreq_threshold
+        self.highfreq_threshold = highfreq_threshold
+        self.hash_add_tries = 0 # sum of hasd-add calls
+        self.hash_relookups = 0 # sum of re-lookups of all hash-add calls
+        self.hash_collisions = 0 # sum of hash-add calls which fail on all re-lookups
+        self.hash_ceilings = 0 # sum of hash-add calls which counter overflows highfreq_threshold
+        self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
+        self.hash_counter_lost = 0 # sum of counters when key is overwritten
+        self.paddings = ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']
+        self.idx_last_hashfunc = len(self.paddings) - 1
+        if dumpfile:
+            self.ht = self.load(dumpfile)
+        if self.ht is None:
+            self.ht = self.init()
+        if self.ht:
+            print("hash_table dtype(%s)\nhash_size(%d): %s" % (self.ht.dtype, len(self.ht), self.ht))
+        else:
+            print("hash_table load() or init() failed.")
+
+    def init(self):
+        self.ht = np.zeors(self.hash_size, dtype=self.hash_dtype)
+        return self.ht
+
+    def load(self, dumpfile):
+        try:
+            self.ht = np.load(dumpfile="hash_counters.npy")
+        except:
+            pass
+        if self.ht:
+            self.hash_dtype = self.ht.dtype
+            self.hash_size = len(self.ht)
+        return self.ht
+
+    def save(self, dumpfile="hash_counters.npy"):
+        np.save(dumpfile, self.ht)
+
+    def add(self, ngram): # bytes type
+        self.hash_add_tries += 1
+        for k, pad in enumerate(self.paddings):
+            i = hash(ngram.hex() + pad) % self.hash_size
+            if self.ht[i][1] == ngram:
+                if (self.ht[i][0] < self.highfreq_threshold):
+                    self.ht[i][0] += 1
+                else:
+                    self.hash_ceilings += 1
+            else:
+                if self.ht[i][0] > self.lowfreq_threshold:
+                    if k < self.idx_last_hashfunc:
+                        self.hash_relookups += 1
+                        continue # try other hash positions
+                    self.hash_collisions += 1             
+                else: # set new ngram or overwrite low-freq ngram
+                    if self.ht[i][0] > 0:
+                        self.hash_overwrites += 1
+                        self.hash_counter_lost += self.ht[i][0]
+                    self.ht[i] = (1, ngram)
+            break
+
 class NgramPacket(object):
     def __init__(self, n = 5, c = 'u2', max_wins = 100, 
-        hash_dumpfile = "hash_counters.npy"
-        hash_capacity = 7 + 10**8, 
-        bloom_capacity = 10**8,
-        bloom_seen_split_capacity = 2 * 10**8,
-        hash_lowfreq_threshold = 0
-      ):
+    hash_dumpfile = "hash_counters.npy",
+    bloom_capacity = 10**8,
+    bloom_seen_split_capacity = 2 * 10**8,
+    ):
         self.n = n # size for n-gram, default 5 bytes
         self.c = c # size for couter, default 2 bytes
         self.max_wins = max_wins
-        self.hash_dumpfile = hash_dumpfile
         self.hash_size = hash_capaicity
         self.bloom_capacity = bloom_capacity
         self.bloom_seen_split = bloom_seen_split_capacity
-        self.hash_lowfreq_threshold = hash_lowfreq_threshold
-        self.hash_add_tries = 0
-        self.hash_relookups = 0
-        self.hash_collision = 0
-        self.conter_overflow = 0
-        self.hash_kickouts = 0
         self.add_ok = 0
         self.add_fail = 0
         self.add_skipped = 0
@@ -102,22 +162,12 @@ class NgramPacket(object):
         self.seen_full = 0
         self.skip_bflist = []
         self.seen_bflist = []
-        self.paddings = ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']
-        self.idx_tail_padding = len(self.paddings)
         self.gold_bloom_files = cmdget("ls gold*.bloom")
         self.bad_bloom_files = cmdget("ls bad*.bloom")
         self.normal_bloom_files = cmdget("ls normal*.bloom")
-        try:
-            self.ht = np.load(self.hash_dumpfile)
-        except:
-            self.ht = init_numpy_hash_table()
+        self.dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
+        self.h = HashProbabilisticCounters(hash_dumpfile, 0, 65535, 7+10**8, dt)
 
-    def init_numpy_hash_table(self):
-        dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
-        return np.zeros(self.hash_size, dtype=dt)
-
-    def save_numpy_hash_table(self, dumpfile):
-        np.save(dumpfile, self.ht)
 
     def seen_bloom(self):
         if self.add_seen_ok >= self.seen_full:
@@ -127,27 +177,6 @@ class NgramPacket(object):
             self.seen_full += bloom.capacity
         return self.seen_bflist[-1]
 
-    def hash_counts(self, ngram): # bytes type
-        self.hash_add_tries += 1
-        for k, pad in enumerate(self.paddings):
-            i = hash(ngram.hex() + pad) % self.hash_size
-            if self.ht[i][1] == ngram:
-                if (self.ht[i][0] < 65535):
-                    self.ht[i][0] += 1
-                else:
-                    self.conter_overflow += 1
-            else:
-                if self.ht[i][0] > self.hash_lowfreq_threshold: # could be 0,2,3,4,... to kick-off low-freq ngrams
-                    if k < self.idx_tail_padding:
-                        self.hash_relookups += 1
-                        continue # try other hash positions
-                    self.hash_collision += 1                  
-                else:
-                    self.ht[i][0] = 2
-                    self.ht[i][1] = ngram
-                    if self.ht[i][0] > 0:
-                        self.hash_kickouts += 1
-             break
    
     def train_bloom_filter(train_bloom, payloads):
         for payload in tqdm(payloads):
