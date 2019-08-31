@@ -4,6 +4,7 @@ import numpy as np
 from pybloomfilter import BloomFilter
 import os
 import re
+import tqdm
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
@@ -73,7 +74,7 @@ def item_in_bloom_filters(item, bf_list):
     return any([item in bf for bf in bf_list])
 
 
-class HashProbabilisticCounters(object):
+class HashTop(object):
     def __init__(self,
     dumpfile = None, # np.load('x.npy') if file exists, instead of init()
     lowfreq_threshold = 0, # under which bucket is overwritable
@@ -141,7 +142,7 @@ class HashProbabilisticCounters(object):
                     self.ht[i] = (1, ngram)
             break
 
-class NgramPacket(object):
+class Payloads2ngram(object):
     def __init__(self, n = 5, c = 'u2', max_wins = 100, 
     hash_dumpfile = "hash_counters.npy",
     bloom_capacity = 10**8,
@@ -166,10 +167,10 @@ class NgramPacket(object):
         self.bad_bloom_files = cmdget("ls bad*.bloom")
         self.normal_bloom_files = cmdget("ls normal*.bloom")
         self.dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
-        self.h = HashProbabilisticCounters(hash_dumpfile, 0, 65535, 7+10**8, dt)
+        self.h = HashTop(hash_dumpfile, 0, 65535, 7+10**8, dt)
 
 
-    def seen_bloom(self):
+    def tail_seen_bloom(self):
         if self.add_seen_ok >= self.seen_full:
             filename = 'tmp_%d.bloom' % (len(self.seen_bflist) + 1)
             bloom = open_bloom_filter(filename, self.bloom_seen_split)
@@ -178,7 +179,7 @@ class NgramPacket(object):
         return self.seen_bflist[-1]
 
    
-    def train_bloom_filter(train_bloom, payloads):
+    def train_bloom_filter(self, train_bloom, payloads):
         for payload in tqdm(payloads):
             try:
                 bts = bytes.fromhex(payload.strip()) # ba.unhexlify(hex_string)
@@ -191,17 +192,17 @@ class NgramPacket(object):
                 self.ngrams += 1
                 ng = bts[i:i+n]
                 if self.item_in_bloom_filters(ng, self.skip_bflist):
-                    self.hash_counts(ng)
+                    self.h.add(ng)
                     self.add_skipped += 1
                     continue
                 if self.item_in_bloom_filters(ng, self.seen_bflist):
-                    self.hash_counts(ng)
+                    self.h.add(ng)
                     if train_bloom.add(ng) == False:
                         self.add_ok += 1
                     else:
                         self.add_fail += 1
                     continue
-                if seen_bloom().add(ng) == False:
+                if tail_seen_bloom().add(ng) == False:
                     self.add_seen_ok += 1
                 else:
                     self.add_seen_fail += 1 # should be almost 0
