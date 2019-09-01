@@ -2,7 +2,7 @@
 # -*- coding=utf-8 -*-
 import numpy as np
 from pybloomfilter import BloomFilter
-from cityhash import CityHash64WithSeeds as cityhash
+from cityhash import CityHash64WithSeed as cityhash
 import os
 import re
 import tqdm
@@ -12,31 +12,40 @@ class BloomFilterList(object):
         self.filename_template = filename_template
         self.capacity = capacity
         self.error_rate = error_rate
-        self.add_ok = 0
-        self.add_fail = 0
+        self.bflist_add_ok = 0
+        self.bflist_add_in = 0
         self.bflist_capacity = 0
         self.bflist = []
-        self.bflist_file_id = 0 # next file_id to be created
+        self.bflist_next_file_id = 0
     
     def new_bloom_filter(self):
-        filename = self.filename_template % self.bflist_file_id
+        filename = self.filename_template % self.bflist_next_file_id
         bloom = BloomFilter.open(self.capacity, self.error_rate, filename)
-        if bloom:
-            self.bflist.append(bloom)
-            self.bflist_capacity += self.capacity
-            self.bflist_file_id += 1
-            return bloom
-        else:
-            print("failed to create new bloom filter")
+        if not bloom:
+            print("failed to create new bloom filter %s" % filename)
             return None
-    
+        self.bflist.append(bloom)
+        self.bflist_capacity += self.capacity
+        self.bflist_next_file_id += 1
+        return bloom
+
     def add(self, item):
-        if self.add_ok >= self.bflist_capacity:
+        if self.bflist_add_ok >= self.bflist_capacity:
             self.new_bloom_filter()
         if self.bflist[-1].add(item) == False:
-            self.add_ok += 1
+            self.bflist_add_ok += 1
         else:
-            self.add_fail += 1
+            self.bflist_add_in += 1
+    
+    def load(self): # do not add new bloom filter after load() 
+        files = cmdget("ls %s | sort" % self.filename_template.replace('%d', '*', 1))
+        for f in files:
+            bf = BloomFilter.open(f)
+            if bf:
+                self.bflist.append(bf)
+                self.bflist_capacity += bf.capacity
+
+
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
@@ -116,6 +125,7 @@ class HashTop(object):
     ):
         self.hash_dtype = hash_dtype
         self.hash_size = hash_size
+        self.hash_dumpfile = dumpfile
         self.lowfreq_threshold = lowfreq_threshold
         self.highfreq_threshold = highfreq_threshold
         self.hash_add_tries = 0 # sum of hasd-add calls
@@ -145,7 +155,7 @@ class HashTop(object):
 
     def load(self, dumpfile):
         try:
-            self.ht = np.load(dumpfile="hash_counters.npy")
+            self.ht = np.load(dumpfile)
         except:
             pass
         if self.ht:
@@ -153,8 +163,11 @@ class HashTop(object):
             self.hash_size = len(self.ht)
         return self.ht
 
-    def save(self, dumpfile="hash_counters.npy"):
-        np.save(dumpfile, self.ht)
+    def save(self, dumpfile=None):
+        npyfile = dumpfile or self.hash_dumpfile
+        print("Saving hash to %s" % npyfile)
+        np.save(npyfile, self.ht)
+        
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
@@ -186,43 +199,34 @@ class HashTop(object):
 
 class BytesNgram(object):
     def __init__(self, n = 5, c = 'u2', max_wins = 100, 
-    hash_dumpfile = "hash_counters.npy",
-    bloom_capacity = 10**8,
-    bloom_seen_split_capacity = 2 * 10**8,
+    hash_file_template = '%s_counters.npy',
+    gold_capacity = 10**8, #137 MB
+    bad_capacity = 10**8,
+    normal_capacity = 10**8,
+    seen_capacity = 2*10**8, #274 MB
     ):
         self.n = n # size for n-gram, default 5 bytes
         self.c = c # size for couter, default 2 bytes
         self.max_wins = max_wins
-        self.bloom_capacity = bloom_capacity
-        self.bloom_seen_split = bloom_seen_split_capacity
-        self.add_ok = 0
-        self.add_fail = 0
-        self.add_skipped = 0
-        self.add_seen_ok = 0
-        self.add_seen_fail = 0
-        self.add_seen_skipped = 0
-        self.seen_full = 0
-        self.skip_bflist = []
-        self.seen_bflist = []
-        self.gold_bloom_files = cmdget("ls gold*.bloom")
-        self.bad_bloom_files = cmdget("ls bad*.bloom")
-        self.normal_bloom_files = cmdget("ls normal*.bloom")
+        self.gold_capacity = gold_capacity
+        self.bad_capacity = bad_capacity
+        self.normal_capacity = normal_capacity
+        self.seen_capacity = seen_capacity
+        self.gold_bloom_files = cmdget("ls gold_*.bloom")
+        self.bad_bloom_files = cmdget("ls bad_*.bloom")
+        self.normal_bloom_files = cmdget("ls normal_*.bloom")
         self.dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
-        self.h = HashTop(hash_dumpfile, 0, 65535, 7+10**8, dt)
-        self.skip = BloomFilterList(self.bloom_capacity, 1/256, 'normal_%d.bloom')
-        self.seen = BloomFilterList(self.bloom_capacity, 1/256, 'seen_%d.bloom')
-
-
-    def tail_seen_bloom(self):
-        if self.add_seen_ok >= self.seen_full:
-            filename = 'tmp_%d.bloom' % (len(self.seen_bflist) + 1)
-            bloom = open_bloom_filter(filename, self.bloom_seen_split)
-            self.seen_bflist.addpend(bloom)
-            self.seen_full += bloom.capacity
-        return self.seen_bflist[-1]
-
+        self.h = None
+        self.hash_file_template = hash_file_template
+        self.gold_skipped = 0
+        self.gold = BloomFilterList(self.gold_capacity, 1/256, 'gold_%d.bloom')
+        self.normal = BloomFilterList(self.normal_capacity, 1/256, 'normal_%d.bloom')
+        self.bad = BloomFilterList(self.bad_capacity, 1/256, 'bad_%d.bloom')
+        self.seen = BloomFilterList(self.seen_capacity, 1/256, 'seen_%d.bloom')
    
-    def train_bloom_filter(self, train_bloom, payloads):
+    def train_bad_bloom_filters(self, payloads):
+        self.h = HashTop(self.hash_file_template % 'bad', 1, 65535, 7+10**7, self.dt)
+        self.gold.load()
         for payload in tqdm(payloads):
             try:
                 bts = bytes.fromhex(payload.strip()) # ba.unhexlify(hex_string)
@@ -233,22 +237,15 @@ class BytesNgram(object):
             num_wins = len(bts) - self.n + 1 # packet may be very large
             for i in range(min(num_wins, self.max_wins)):
                 self.ngrams += 1
-                ng = bts[i:i+n]
-                if self.item_in_bloom_filters(ng, self.skip.bflist):
-                    self.h.add(ng)
-                    self.add_skipped += 1
-                    continue
-                if self.item_in_bloom_filters(ng, self.seen.bflist):
-                    self.h.add(ng)
-                    if train_bloom.add(ng) == False:
-                        self.add_ok += 1
-                    else:
-                        self.add_fail += 1
-                    continue
-                if tail_seen_bloom().add(ng) == False:
-                    self.add_seen_ok += 1
+                ng = bts[i:i+n] # bytes type
+                self.h.add(ng) # hash counters
+                if any([ng in b for b in self.gold.bflist]):
+                    self.gold_skipped += 1
+                elif any([ng in b for b in self.seen.bflist]):
+                    self.bad.add(ng)
                 else:
-                    self.add_seen_fail += 1 # should be almost 0
+                    self.seen.add(ng)
+        self.h.save()
 
 def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
     global add_ok, add_fail, add_skipped, ngrams 
