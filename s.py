@@ -2,9 +2,41 @@
 # -*- coding=utf-8 -*-
 import numpy as np
 from pybloomfilter import BloomFilter
+from cityhash import CityHash64WithSeeds as cityhash
 import os
 import re
 import tqdm
+
+class BloomFilterList(object):
+    def __init__(self, capacity, error_rate=1/256, filename_template='bloom_filter_%d.bloom'):
+        self.filename_template = filename_template
+        self.capacity = capacity
+        self.error_rate = error_rate
+        self.add_ok = 0
+        self.add_fail = 0
+        self.bflist_capacity = 0
+        self.bflist = []
+        self.bflist_file_id = 0 # next file_id to be created
+    
+    def new_bloom_filter(self):
+        filename = self.filename_template % self.bflist_file_id
+        bloom = BloomFilter.open(self.capacity, self.error_rate, filename)
+        if bloom:
+            self.bflist.append(bloom)
+            self.bflist_capacity += self.capacity
+            self.bflist_file_id += 1
+            return bloom
+        else:
+            print("failed to create new bloom filter")
+            return None
+    
+    def add(self, item):
+        if self.add_ok >= self.bflist_capacity:
+            self.new_bloom_filter()
+        if self.bflist[-1].add(item) == False:
+            self.add_ok += 1
+        else:
+            self.add_fail += 1
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
@@ -87,13 +119,17 @@ class HashTop(object):
         self.lowfreq_threshold = lowfreq_threshold
         self.highfreq_threshold = highfreq_threshold
         self.hash_add_tries = 0 # sum of hasd-add calls
+        self.hash_added_keys = 0 # num of buckets in use
         self.hash_relookups = 0 # sum of re-lookups of all hash-add calls
         self.hash_collisions = 0 # sum of hash-add calls which fail on all re-lookups
         self.hash_ceilings = 0 # sum of hash-add calls which counter overflows highfreq_threshold
         self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
-        self.paddings = ['abcdef','ghijkl','mnopqr', 'stuvwx', 'yzABCD', 'EFGHIJ', 'KLMNOP', 'QRSTUVW']
-        self.idx_last_hashfunc = len(self.paddings) - 1
+        self.hash_seeds = [2819948058, 5686873063, 1769651746, 8745608315, 2414950003, 
+        3583714723, 1224464945, 2514535028] #np.random.randint(10**9,10**10,8)
+        self.hash_seeds2 = [1768623688, 5213376251, 1536002587, 2694018504, 9277054995,
+        4773248795, 4874301328, 2082648990]
+ 
         if dumpfile:
             self.ht = self.load(dumpfile)
         if self.ht is None:
@@ -122,8 +158,10 @@ class HashTop(object):
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
-        for k, pad in enumerate(self.paddings):
-            i = hash(ngram.hex() + pad) % self.hash_size
+        n_left_hash_funcs = self.hash_funcs_num
+        for seed, seed2 in zip(self.hash_seeds, self.hash_seeds2):
+            i = cityhash(ngram.hex(), seed, seed2) % self.hash_size
+            n_left_hash_funcs -= 1
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < self.highfreq_threshold):
                     self.ht[i][0] += 1
@@ -131,18 +169,22 @@ class HashTop(object):
                     self.hash_ceilings += 1
             else:
                 if self.ht[i][0] > self.lowfreq_threshold:
-                    if k < self.idx_last_hashfunc:
+                    if n_left_hash_funcs > 0:
                         self.hash_relookups += 1
                         continue # try other hash positions
-                    self.hash_collisions += 1             
+                    self.hash_collisions += 1
                 else: # set new ngram or overwrite low-freq ngram
                     if self.ht[i][0] > 0:
                         self.hash_overwrites += 1
                         self.hash_counter_lost += self.ht[i][0]
+                    else:
+                        self.hash_added_keys += 1
                     self.ht[i] = (1, ngram)
             break
 
-class Payloads2ngram(object):
+
+
+class BytesNgram(object):
     def __init__(self, n = 5, c = 'u2', max_wins = 100, 
     hash_dumpfile = "hash_counters.npy",
     bloom_capacity = 10**8,
@@ -151,7 +193,6 @@ class Payloads2ngram(object):
         self.n = n # size for n-gram, default 5 bytes
         self.c = c # size for couter, default 2 bytes
         self.max_wins = max_wins
-        self.hash_size = hash_capaicity
         self.bloom_capacity = bloom_capacity
         self.bloom_seen_split = bloom_seen_split_capacity
         self.add_ok = 0
@@ -168,6 +209,8 @@ class Payloads2ngram(object):
         self.normal_bloom_files = cmdget("ls normal*.bloom")
         self.dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
         self.h = HashTop(hash_dumpfile, 0, 65535, 7+10**8, dt)
+        self.skip = BloomFilterList(self.bloom_capacity, 1/256, 'normal_%d.bloom')
+        self.seen = BloomFilterList(self.bloom_capacity, 1/256, 'seen_%d.bloom')
 
 
     def tail_seen_bloom(self):
@@ -191,11 +234,11 @@ class Payloads2ngram(object):
             for i in range(min(num_wins, self.max_wins)):
                 self.ngrams += 1
                 ng = bts[i:i+n]
-                if self.item_in_bloom_filters(ng, self.skip_bflist):
+                if self.item_in_bloom_filters(ng, self.skip.bflist):
                     self.h.add(ng)
                     self.add_skipped += 1
                     continue
-                if self.item_in_bloom_filters(ng, self.seen_bflist):
+                if self.item_in_bloom_filters(ng, self.seen.bflist):
                     self.h.add(ng)
                     if train_bloom.add(ng) == False:
                         self.add_ok += 1
