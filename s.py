@@ -7,6 +7,19 @@ import os
 import re
 import tqdm
 
+class BloomFilterDB(BloomFilter):
+    def __init__(self, dbfile=None):
+        self.dbfile = dbfile
+
+    def load(self):
+	try:
+	    bf = BloomFilter.open(self.dbfile)
+	    meta = json.loads(self.dbfile.replace('.bloom','.meta',1))
+	    
+
+    def save():
+	pass
+
 class BloomFilterList(object):
     def __init__(self, capacity, error_rate=1/256, filename_template='bloom_filter_%d.bloom'):
         self.filename_template = filename_template
@@ -38,14 +51,22 @@ class BloomFilterList(object):
             self.bflist_add_in += 1
     
     def load(self): # do not add new bloom filter after load() 
-        files = cmdget("ls %s | sort" % self.filename_template.replace('%d', '*', 1))
-	last_exist_id = cmdget("echo %s |awk -F_ '{print $NF}' |awk -F. '{print $1}'" % files[-1])[0]
-        self.bflist_next_file_id = int(last_exist_id) + 1
-	for f in files:
-            bf = BloomFilter.open(f)
-            if bf:
-                self.bflist.append(bf)
-                self.bflist_capacity += bf.capacity
+	bflist_dbfile_search = self.filename_template.replace('%d', '*', 1)
+	bflist_meta = self.filename_template.replace('_%d.bloom', '.meta', 1)
+	dbfiles_ids = cmdget("ls %s |awk -F_ '{print $NF}' |awk -F. '{print $1}'" % bflist_dbfile_search)
+	self.bflist_next_file_id = max([int(i) for i in dbfiles_ids]) + 1
+        dbfiles = cmdget("ls %s | sort" % bflist_dbfile_search)
+	for f in dbfiles:
+	    meta = f.replace('.bloom','.meta',1)
+	    try:
+                bf = BloomFilter.open(f)
+		bflist_len = cmdget("cat %s" % self.dbfile.replace('.bloom','.meta',1))[0]
+	    except:
+		print("Failed to load bloom filter %s" % f)
+            self.bflist.append(bf)
+            self.bflist_capacity += bf.capacity
+	    self.bflist_add_ok += int(bflist_len)
+	    
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
@@ -77,7 +98,7 @@ def close_bloom_filter(bf,**kwargs):
         for key, value in kwargs.items():
             s += '%s = %ld,'%(key,value)
         print(s)
-    bf.sync()            
+    bf.sync()        Ω    
     bf.close()     
 
 def get_bloom_filters(bftype_list,current_bfname=None):
