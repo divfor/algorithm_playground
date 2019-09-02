@@ -39,13 +39,13 @@ class BloomFilterList(object):
     
     def load(self): # do not add new bloom filter after load() 
         files = cmdget("ls %s | sort" % self.filename_template.replace('%d', '*', 1))
-        for f in files:
+	last_exist_id = cmdget("echo %s |awk -F_ '{print $NF}' |awk -F. '{print $1}'" % files[-1])[0]
+        self.bflist_next_file_id = int(last_exist_id) + 1
+	for f in files:
             bf = BloomFilter.open(f)
             if bf:
                 self.bflist.append(bf)
                 self.bflist_capacity += bf.capacity
-
-
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
