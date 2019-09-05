@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding=utf-8 -*-
-import numpy as np
-from pybloomfilter import BloomFilter
-from cityhash import CityHash64WithSeed as cityhash
 import os
 import re
 import tqdm
+import numpy as np
+# pip3 install cython; 
+# pip3 install https://github.com/divfor/pybloomfiltermmap3/archive/master.zip
+from pybloomfilter import BloomFilter
+# pip3 install cityhash, see https://github.com/escherba/python-cityhash
+# https://github.com/google/cityhash
+from cityhash import CityHash64WithSeed as cityhash
+# pip3 install datasketch, see https://github.com/ekzhu/datasketch
+from datasketch import HyperLogLogPlusPlus
+# pip3 install bounter, see https://github.com/RaRe-Technologies/bounter
+from bounter import bounter
+
 
 class BloomFilterDB(BloomFilter):
     def __init__(self, dbfile=None):
@@ -16,7 +25,6 @@ class BloomFilterDB(BloomFilter):
 	    bf = BloomFilter.open(self.dbfile)
 	    meta = json.loads(self.dbfile.replace('.bloom','.meta',1))
 	    
-
     def save():
 	pass
 
@@ -158,8 +166,6 @@ class HashTop(object):
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
         self.hash_seeds = [2819948058, 5686873063, 1769651746, 8745608315, 2414950003, 
         3583714723, 1224464945, 2514535028] #np.random.randint(10**9,10**10,8)
-        self.hash_seeds2 = [1768623688, 5213376251, 1536002587, 2694018504, 9277054995,
-        4773248795, 4874301328, 2082648990]
  
         if dumpfile:
             self.ht = self.load(dumpfile)
@@ -193,8 +199,8 @@ class HashTop(object):
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         n_left_hash_funcs = self.hash_funcs_num
-        for seed, seed2 in zip(self.hash_seeds, self.hash_seeds2):
-            i = cityhash(ngram.hex(), seed, seed2) % self.hash_size
+        for seed in self.hash_seeds:
+            i = cityhash(ngram.hex(), seed) % self.hash_size
             n_left_hash_funcs -= 1
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < self.highfreq_threshold):
@@ -244,6 +250,10 @@ class BytesNgram(object):
         self.normal = BloomFilterList(self.normal_capacity, 1/256, 'normal_%d.bloom')
         self.bad = BloomFilterList(self.bad_capacity, 1/256, 'bad_%d.bloom')
         self.seen = BloomFilterList(self.seen_capacity, 1/256, 'seen_%d.bloom')
+	self.bnt = bounter(need_counts=False) # use HLL algorithm only
+	self.bnt_estimated__total_ngrams = 0
+	self.hll = HyperLogLogPlusPlus(p=14)
+	self.hll_estimated__total_ngrams = 0
    
     def train_bad_bloom_filters(self, payloads):
         self.h = HashTop(self.hash_file_template % 'bad', 1, 65535, 7+10**7, self.dt)
@@ -260,6 +270,9 @@ class BytesNgram(object):
                 self.ngrams += 1
                 ng = bts[i:i+n] # bytes type
                 self.h.add(ng) # hash counters
+		utf8ng=ng.hex().encode('utf8')
+		self.hll.update(utf8ng)
+		self.bnt.update(list(utf8ng))
                 if any([ng in b for b in self.gold.bflist]):
                     self.gold_skipped += 1
                 elif any([ng in b for b in self.seen.bflist]):
@@ -267,6 +280,8 @@ class BytesNgram(object):
                 else:
                     self.seen.add(ng)
         self.h.save()
+	self.hll_estimated__total_ngrams = self.hpp.count()
+	self.bnt_estimated__total_ngrams = self.bnt.cardinality()
 
 def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
     global add_ok, add_fail, add_skipped, ngrams 
