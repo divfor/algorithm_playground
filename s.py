@@ -8,82 +8,14 @@ import numpy as np
 # pip3 install cython; 
 # pip3 install https://github.com/divfor/pybloomfiltermmap3/archive/master.zip
 from pybloomfilter import BloomFilter
-# pip3 install datasketch, see https://github.com/ekzhu/datasketch
-from datasketch import HyperLogLogPlusPlus
-# pip3 install bounter, see https://github.com/RaRe-Technologies/bounter
-from bounter import bounter
 from .HashTop import HashTop
+from .BloomFilterList import BloomFilterList
 
 def cmdget(cmd):
     return [f.strip() for f in os.popen(cmd).readlines()]
 
 def count_in_bloom_filters(item, bf_list):
     return sum([item in bf for bf in bf_list])
-
-class BloomFilterList(object):
-    def __init__(self, capacity, error_rate=1/256, dbfiles='~/gold/gold_*.bloom'):
-        self.dbfiles = dbfiles
-        self.dbfile_matcher = dbfiles.replace('_*.bloom','_%d.bloom')
-        self.metafile_matcher = dbfiles.replace('_*.bloom','_%d.meta')
-        self.capacity = capacity
-        self.error_rate = error_rate
-        self.bflist_add_ok = 0
-        self.bflist_add_in = 0
-        self.bflist_capacity = 0
-        self.bflist_next_file_id = 0
-        self.bflist = []
-
-    def save_bloom_filter(self, bloom_filter):
-        meta_file = bloom_filter.name.rsplit('.',1)[0] + '.meta'
-        cmdget("echo %d > %s" % (len(bloom_filter), meta_file))
-        bloom_filter.sync()
-
-    def new_bloom_filter(self):
-        filename = self.dbfile_matcher % self.bflist_next_file_id
-        bloom = BloomFilter.open(self.capacity, self.error_rate, filename)
-        if not bloom:
-            print("failed to create new bloom filter %s" % filename)
-            return None
-        self.save_bloom_filter(bflist[-1])
-        self.bflist.append(bloom)
-        self.bflist_capacity += self.capacity
-        self.bflist_next_file_id += 1
-        return bloom
-
-    def add(self, item):
-        if self.bflist_add_ok >= self.bflist_capacity:
-            self.new_bloom_filter()
-        if self.bflist[-1].add(item) == False:
-            self.bflist_add_ok += 1
-        else:
-            self.bflist_add_in += 1
-
-    def load(self): # do not add new bloom filter after load()
-        dbfiles_ids = cmdget("ls %s |awk -F_ '{print $NF}' |awk -F. '{print $1}'" % self.dbfiles)
-        self.bflist_next_file_id = 1 + max([int(i) for i in dbfiles_ids])
-        for f in cmdget("ls %s | sort" % self.dbfiles):
-            meta_file = f.rsplit('.',1)[0] + '.meta'
-            try:
-                b = BloomFilter.open(f)
-                n = cmdget("cat %s" % meta_file)[0]
-            except:
-                print("Failed to load bloom filter %s" % f)
-                continue
-            self.bflist.append(b)
-            self.bflist_capacity += b.capacity
-            self.bflist_add_ok += int(n)
-
-    def close(self):
-        self.save_bloom_filter(self.bflist[-1])
-        for b in self.bflist: 
-            summary = str(b).strip('<>') + ', num_bits: %ld' % b.num_bits
-            print("\nelements_new_added (%ld): %s\n" % (len(b), b.name))
-            print("%s\nHash Seeds: %s\n" % (summary, b.hash_seeds))
-            b.close()
-        print("\nbflist_capacity: %ld, " % self.bflist_capacity)
-        print("bflist_add_repeats: %ld, " % self.bflist_add_in)
-        print("bflist_add_ok: %ld\n" % self.bflist_add_ok)
-
 
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
@@ -146,13 +78,20 @@ def get_bloom_filters(bftype_list,current_bfname=None):
 
 
 class BytesNgram(object):
-    def __init__(self, n = 5, c = 'u2', max_wins = 100, 
-    hash_file_template = '%s_counters.npy',
-    gold_capacity = 10**8, #137 MB
-    bad_capacity = 10**8,
-    normal_capacity = 10**8,
-    seen_capacity = 2*10**8, #274 MB
-    ):
+    '''
+        n : num of bytes of one n-gram (always 1-byte sliding)
+        c : default 'u2' for unsigned int of 2-bytes from numpy dtype
+        max_wins : at most num of n-grams slided from payload, default 100
+        gold_capacity : default 10**8, ~137 MB
+        bad_capacity : default 10**8, ~137 MB
+        normal_capacity : default 10**8, ~137 MB
+        seen_capacity : 2*10**8, ~274 MB
+    '''
+    def __init__(self, n = 5, c = 'u2', max_wins = 100,
+                gold_capacity = 10**8,
+                bad_capacity = 10**8,
+                normal_capacity = 10**8,
+                seen_capacity = 2*10**8):
         self.n = n # size for n-gram, default 5 bytes
         self.c = c # size for couter, default 2 bytes
         self.max_wins = max_wins
@@ -160,25 +99,21 @@ class BytesNgram(object):
         self.bad_capacity = bad_capacity
         self.normal_capacity = normal_capacity
         self.seen_capacity = seen_capacity
-        self.gold_bloom_files = cmdget("ls gold_*.bloom")
-        self.bad_bloom_files = cmdget("ls bad_*.bloom")
-        self.normal_bloom_files = cmdget("ls normal_*.bloom")
-        self.dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
         self.h = None
-        self.hash_file_template = hash_file_template
         self.gold_skipped = 0
         self.gold = BloomFilterList(self.gold_capacity, 1/256, 'gold/gold_*.bloom')
         self.normal = BloomFilterList(self.normal_capacity, 1/256, 'normal/normal_*.bloom')
         self.bad = BloomFilterList(self.bad_capacity, 1/256, 'bad/bad_*.bloom')
         self.seen = BloomFilterList(self.seen_capacity, 1/256, 'tmp/seen_*.bloom')
-        self.bnt = bounter(need_counts=False) # use HLL algorithm only
-        self.hll = HyperLogLogPlusPlus(p=14)
-        self.hll_estimated__total_ngrams = 0
-     	self.bnt_estimated__total_ngrams = 0
+
    
     def train_bad_bloom_filters(self, payloads):
-        self.h = HashTop(self.hash_file_template % 'bad', 1, 65535, 7+10**7, self.dt)
+        bad_hashdb = '.'.join(self.bad.dbfile_base, 'npy')
+        dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
+        self.h = HashTop(dumpfile=bad_hashdb, lowfreq_threshold=1, highfreq_threshold=65535,
+                        hash_size=7+10**7, hash_dtype=dt)
         self.gold.load()
+        self.seen.load()
         for payload in tqdm(payloads):
             try:
                 bts = bytes.fromhex(payload.strip()) # ba.unhexlify(hex_string)
@@ -191,18 +126,17 @@ class BytesNgram(object):
                 self.ngrams += 1
                 ng = bts[i:i+n] # bytes type
                 self.h.add(ng) # hash counters
-		utf8ng=ng.hex().encode('utf8')
-		self.hll.update(utf8ng)
-		self.bnt.update(list(utf8ng))
-                if any([ng in b for b in self.gold.bflist]):
+                if any([ng in b for b in self.gold.bflist]): # remove this if bad wants to be free from gold
                     self.gold_skipped += 1
-                elif any([ng in b for b in self.seen.bflist]):
+                elif any([ng in b for b in self.seen.bflist]): # remove this for bad
                     self.bad.add(ng)
                 else:
                     self.seen.add(ng)
         self.h.save()
-	self.hll_estimated__total_ngrams = self.hpp.count()
-	self.bnt_estimated__total_ngrams = self.bnt.cardinality()
+        print("\nN-Gram number from bad Ddta - Hash: %ld" % self.h.hash_added_keys)
+        print(", HyperLogLog: %ld" % self.h.hll.count())
+        print(", Bounter: %ld" % self.h.bnt.cardinality())
+
 
 def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
     global add_ok, add_fail, add_skipped, ngrams 

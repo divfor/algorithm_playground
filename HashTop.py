@@ -2,16 +2,22 @@
 # pip3 install cityhash, see https://github.com/escherba/python-cityhash
 # https://github.com/google/cityhash
 from cityhash import CityHash64WithSeed as cityhash
+# pip3 install datasketch, see https://github.com/ekzhu/datasketch
+from datasketch import HyperLogLogPlusPlus
+# pip3 install bounter, see https://github.com/RaRe-Technologies/bounter
+from bounter import bounter
 import numpy as np
 
 class HashTop(object):
-    def __init__(self,
-    dumpfile = None, # np.load('x.npy') if file exists, instead of init()
-    lowfreq_threshold = 0, # under which bucket is overwritable
-    highfreq_threshold = 65535, # counter's ceiling
-    hash_size = 7+10**8, # hash table size
-    hash_dtype = np.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])
-    ):
+    '''
+        dumpfile : 'path/to/filename.npy' to be loaded by numpy
+        lowfreq_threshold : preemptable threshold under which bucket could be overwritten by new key
+        highfreq_threshold : ceiling of counters to limit increasing or avoid overflow
+        hash_size : hash table size
+        hash_dtype : example - numpy.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])
+    '''
+    def __init__(self, dumpfile = None, lowfreq_threshold = 0, highfreq_threshold = 65535, hash_size = 7+10**8,
+                hash_dtype = np.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])):
         self.hash_dtype = hash_dtype
         self.hash_size = hash_size
         self.hash_dumpfile = dumpfile
@@ -24,6 +30,10 @@ class HashTop(object):
         self.hash_ceilings = 0 # sum of hash-add calls which counter overflows highfreq_threshold
         self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
+        self.bnt = bounter(need_counts=False) # use HLL algorithm only
+        self.hll = HyperLogLogPlusPlus(p=14)
+        self.bnt_count = 0
+     	self.hll_count = 0
         self.hash_seeds = [2819948058, 5686873063, 1769651746, 8745608315, 2414950003, 
         3583714723, 1224464945, 2514535028] #np.random.randint(10**9,10**10,8)
  
@@ -57,9 +67,12 @@ class HashTop(object):
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
+        nghex = ngram.hex().encode('utf8')
+        self.hll.update(nghex)
+        self.bnt.update(list(nghex))
         n_left_hash_funcs = self.hash_funcs_num
         for seed in self.hash_seeds:
-            i = cityhash(ngram.hex(), seed) % self.hash_size
+            i = cityhash(nghex, seed) % self.hash_size
             n_left_hash_funcs -= 1
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < self.highfreq_threshold):
