@@ -11,12 +11,6 @@ from pybloomfilter import BloomFilter
 from .HashTop import HashTop
 from .BloomFilterList import BloomFilterList
 
-def cmdget(cmd):
-    return [f.strip() for f in os.popen(cmd).readlines()]
-
-def count_in_bloom_filters(item, bf_list):
-    return sum([item in bf for bf in bf_list])
-
 def open_bloom_filter(bfname,capacity):
     savepath = '/data/bloomfilters'
     if 'gold' in bfname: savepath += '/gold'
@@ -106,12 +100,13 @@ class BytesNgram(object):
         self.bad = BloomFilterList(self.bad_capacity, 1/256, 'bad/bad_*.bloom')
         self.seen = BloomFilterList(self.seen_capacity, 1/256, 'tmp/seen_*.bloom')
 
-   
-    def train_bad_bloom_filters(self, payloads):
-        bad_hashdb = '.'.join(self.bad.dbfile_base, 'npy')
+    def train_gold_bloom_filters(self, payloads):
+        gold_hashdb = '.'.join(self.gold.dbfile_base, 'npy')
         dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
-        self.h = HashTop(dumpfile=bad_hashdb, lowfreq_threshold=1, highfreq_threshold=65535,
-                        hash_size=7+10**7, hash_dtype=dt)
+        self.h = HashTop(dumpfile=gold_hashdb, lowfreq_threshold=1, highfreq_threshold=65535,
+                        hash_size=self.gold_capacity, hash_dtype=dt)
+        self.gold = BloomFilterList(self.gold_capacity, 1/256, 'gold/gold_*.bloom')
+        self.seen = BloomFilterList(self.seen_capacity, 1/256, 'tmp/seen_*.bloom')
         self.gold.load()
         self.seen.load()
         for payload in tqdm(payloads):
@@ -126,16 +121,62 @@ class BytesNgram(object):
                 self.ngrams += 1
                 ng = bts[i:i+n] # bytes type
                 self.h.add(ng) # hash counters
-                if any([ng in b for b in self.gold.bflist]): # remove this if bad wants to be free from gold
-                    self.gold_skipped += 1
-                elif any([ng in b for b in self.seen.bflist]): # remove this for bad
-                    self.bad.add(ng)
-                else:
-                    self.seen.add(ng)
-        self.h.save()
-        print("\nN-Gram number from bad Ddta - Hash: %ld" % self.h.hash_added_keys)
-        print(", HyperLogLog: %ld" % self.h.hll.count())
-        print(", Bounter: %ld" % self.h.bnt.cardinality())
+                self.gold.add(ng) # bloom filters
+                if not any([ng in b for b in self.seen.bflist]):
+                    self.seen.add(ng) # bloom filters for one-seen recording
+        self.seen.close()
+        self.gold.close()
+        self.h.close()
+   
+    def train_bad_bloom_filters(self, payloads):
+        bad_hashdb = '.'.join(self.bad.dbfile_base, 'npy')
+        dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
+        self.h = HashTop(dumpfile=bad_hashdb, lowfreq_threshold=1, highfreq_threshold=65535,
+                        hash_size=self.bad_capacity, hash_dtype=dt)
+        self.bad = BloomFilterList(self.bad_capacity, 1/256, 'bad/bad_*.bloom')
+        for payload in tqdm(payloads):
+            try:
+                bts = bytes.fromhex(payload.strip()) # ba.unhexlify(hex_string)
+            except:
+                continue
+            if len(bts) < self.n:
+                continue
+            num_wins = len(bts) - self.n + 1 # packet may be very large
+            for i in range(min(num_wins, self.max_wins)):
+                self.ngrams += 1
+                ng = bts[i:i+n] # bytes type
+                self.h.add(ng) # hash counters
+                self.bad.add(ng) # bloom filters
+        self.bad.close()
+        self.h.close()
+
+    def train_normal_bloom_filters(self, payloads):
+        bad_hashdb = '.'.join(self.bad.dbfile_base, 'npy')
+        dt = np.dtype([('counter', self.c), ('n-gram', bytes, self.n)])
+        self.h = HashTop(dumpfile=bad_hashdb, lowfreq_threshold=2, highfreq_threshold=65535,
+                        hash_size=self.normal_capacity, hash_dtype=dt)
+        self.normal = BloomFilterList(self.normal_capacity, 1/256, 'normal/normal_*.bloom')
+        self.normal.load() # continue work
+        self.seen = BloomFilterList(self.seen_capacity, 1/256, 'tmp/seen_*.bloom')
+        self.seen.load()
+        for payload in tqdm(payloads):
+            try:
+                bts = bytes.fromhex(payload.strip()) # ba.unhexlify(hex_string)
+            except:
+                continue
+            if len(bts) < self.n:
+                continue
+            num_wins = len(bts) - self.n + 1 # packet may be very large
+            for i in range(min(num_wins, self.max_wins)):
+                self.ngrams += 1
+                ng = bts[i:i+n] # bytes type
+                self.h.add(ng) # hash counters
+                self.normal.add(ng) # bloom filters
+                if not any([ng in b for b in self.seen.bflist]):
+                    self.seen.add(ng) # bloom filters for one-seen recording
+        self.normal.close()
+        self.seen.close()
+        self.h.close()
 
 
 def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
@@ -172,10 +213,10 @@ def train(dataname,bfname,train_txt_num=123,capacity=100000000,n=5):
 
 
 def main():
-    ngp = NgramPacket()
+    bn = BytesNgram()
     # train('data1','gold.bloom',n=5)  # 1230w
     # train('bad1_80pct.bloom',0.9)
-    ngp.train('data1','normal1_n5.bloom',n=5,train_txt_num=228) # 2280w
+    bn.train('data1','normal1_n5.bloom',n=5,train_txt_num=228) # 2280w
 
    
 if __name__ == "__main__":

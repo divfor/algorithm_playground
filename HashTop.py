@@ -62,8 +62,14 @@ class HashTop(object):
 
     def save(self, dumpfile=None):
         npyfile = dumpfile or self.hash_dumpfile
-        print("Saving hash to %s" % npyfile)
+        print("\nSaving hash to %s" % npyfile)
         np.save(npyfile, self.ht)
+
+    def close(self):
+        self.save()
+        print("\nElement count - Hash: %ld" % self.hash_added_keys)
+        print(", HyperLogLog: %ld" % self.hll.count())
+        print(", Bounter: %ld\n\n" % self.bnt.cardinality())
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1

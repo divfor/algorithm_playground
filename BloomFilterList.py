@@ -71,4 +71,4 @@ class BloomFilterList(object):
             b.close()
         print("\nbflist_capacity: %ld, " % self.bflist_capacity)
         print("bflist_add_repeats: %ld, " % self.bflist_add_in)
-        print("bflist_add_ok: %ld\n" % self.bflist_add_ok)
+        print("bflist_add_ok: %ld\n\n" % self.bflist_add_ok)
