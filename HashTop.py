@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
+
 # pip3 install cityhash, see https://github.com/escherba/python-cityhash
 # https://github.com/google/cityhash
 from cityhash import CityHash64WithSeed as cityhash
-# pip3 install datasketch, see https://github.com/ekzhu/datasketch
-from datasketch import HyperLogLogPlusPlus
-# pip3 install bounter, see https://github.com/RaRe-Technologies/bounter
-from bounter import bounter
+
+# from datasketch import HyperLogLogPlusPlus # https://github.com/ekzhu/datasketch
+from bounter import bounter # https://github.com/RaRe-Technologies/bounter
 import numpy as np
 
 class HashTop(object):
@@ -16,7 +16,8 @@ class HashTop(object):
         hash_size : hash table size
         hash_dtype : example - numpy.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])
     '''
-    def __init__(self, dumpfile = None, lowfreq_threshold = 0, highfreq_threshold = 65535, hash_size = 7+10**8,
+    def __init__(self, dumpfile = None, 
+                lowfreq_threshold = 0, highfreq_threshold = 65535, hash_size = 7+10**8,
                 hash_dtype = np.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])):
         self.hash_dtype = hash_dtype
         self.hash_size = hash_size
@@ -31,23 +32,24 @@ class HashTop(object):
         self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
         self.bnt = bounter(need_counts=False) # use HLL algorithm only
-        self.hll = HyperLogLogPlusPlus(p=14)
         self.bnt_count = 0
-     	self.hll_count = 0
+        self.ht = None
         self.hash_seeds = [2819948058, 5686873063, 1769651746, 8745608315, 2414950003, 
         3583714723, 1224464945, 2514535028] #np.random.randint(10**9,10**10,8)
- 
+        self.hash_funcs_num = len(self.hash_seeds)
+
         if dumpfile:
             self.ht = self.load(dumpfile)
         if self.ht is None:
             self.ht = self.init()
-        if self.ht:
-            print("hash_table dtype(%s)\nhash_size(%d): %s" % (self.ht.dtype, len(self.ht), self.ht))
+        if self.ht is not None:
+            print("hash_table dtype(%s)" % self.ht.dtype)
+            print("hash_size(%d): %s" % (len(self.ht), self.ht))
         else:
             print("hash_table load() or init() failed.")
 
     def init(self):
-        self.ht = np.zeors(self.hash_size, dtype=self.hash_dtype)
+        self.ht = np.zeros(self.hash_size, dtype=self.hash_dtype)
         return self.ht
 
     def load(self, dumpfile):
@@ -55,7 +57,7 @@ class HashTop(object):
             self.ht = np.load(dumpfile)
         except:
             pass
-        if self.ht:
+        if self.ht is not None:
             self.hash_dtype = self.ht.dtype
             self.hash_size = len(self.ht)
         return self.ht
@@ -67,18 +69,15 @@ class HashTop(object):
 
     def close(self):
         self.save()
-        print("\nElement count - Hash: %ld" % self.hash_added_keys)
-        print(", HyperLogLog: %ld" % self.hll.count())
-        print(", Bounter: %ld\n\n" % self.bnt.cardinality())
+        print("\nElements by CityHash: %ld" % self.hash_added_keys)
+        print("Elements by Bounter: %ld\n" % self.bnt.cardinality())
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
-        nghex = ngram.hex().encode('utf8')
-        self.hll.update(nghex)
-        self.bnt.update(list(nghex))
+        self.bnt.update([bytes(ngram)])
         n_left_hash_funcs = self.hash_funcs_num
         for seed in self.hash_seeds:
-            i = cityhash(nghex, seed) % self.hash_size
+            i = cityhash(ngram, seed) % self.hash_size
             n_left_hash_funcs -= 1
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < self.highfreq_threshold):
@@ -99,3 +98,4 @@ class HashTop(object):
                         self.hash_added_keys += 1
                     self.ht[i] = (1, ngram)
             break
+
