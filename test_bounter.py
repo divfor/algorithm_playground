@@ -7,7 +7,7 @@ from HashTop import HashTop
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','u2'),('key',np.int)])
-    h = HashTop("test_hll.npy", lowfreq_threshold=1, highfreq_threshold=65535, hash_size=m, hash_dtype=dt)
+    h = HashTop("bn.npy", 1, 65535, m, dt)
     for i in np.random.randint(0, 1000000, n):
         h.add(i)
     h.close()

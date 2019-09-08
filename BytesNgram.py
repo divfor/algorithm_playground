@@ -5,11 +5,8 @@ import re
 import json
 import tqdm
 import numpy as np
-# pip3 install cython; 
-# pip3 install https://github.com/divfor/pybloomfiltermmap3/archive/master.zip
-from pybloomfilter import BloomFilter
-from .HashTop import HashTop
-from .BloomFilterList import BloomFilterList
+from HashTop import HashTop
+from BloomFilterList import BloomFilterList
 
 class BytesNgram(object):
     '''
@@ -107,6 +104,18 @@ class BytesNgram(object):
             if len(bts) < self.n:
                 continue
             num_wins = len(bts) - self.n + 1 # packet may be very large
+
+            # if 5+% same as bad filter, give up this payload
+            p5threshold = int(0.05 * num_wins)
+            in_bad_filters = 0
+            for i in range(num_wins):
+                if any([bts[i:i+self.n] in bf for bf in self.bad.bflist]):
+                    in_bad_filters += 1
+                if in_bad_filters > p5threshold:
+                    break
+            if in_bad_filters > p5threshold:
+                continue
+
             for i in range(min(num_wins, self.max_wins)):
                 self.ngrams += 1
                 ng = bts[i:i+n] # bytes type
