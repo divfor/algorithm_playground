@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-# pip3 install cityhash, see https://github.com/escherba/python-cityhash
+# https://github.com/escherba/python-cityhash
 # https://github.com/google/cityhash
+# https://github.com/ekzhu/datasketch
+# https://github.com/RaRe-Technologies/bounter
+# from datasketch import HyperLogLogPlusPlus
 from cityhash import CityHash64WithSeed as cityhash
-
-# from datasketch import HyperLogLogPlusPlus # https://github.com/ekzhu/datasketch
-from bounter import bounter # https://github.com/RaRe-Technologies/bounter
+from bounter import bounter
 import numpy as np
 
 class HashTop(object):
