@@ -8,8 +8,7 @@ def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','u2'),('key',np.int)])
     h = HashTop("test_hll.npy", lowfreq_threshold=1, highfreq_threshold=65535, hash_size=m, hash_dtype=dt)
-    data = np.random.randint(140000, 170000, n)
-    for i in data:
+    for i in np.random.randint(0, 1000000, n):
         h.add(i)
     h.close()
 

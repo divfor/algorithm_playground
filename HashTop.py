@@ -69,15 +69,19 @@ class HashTop(object):
 
     def close(self):
         self.save()
-        print("\nElements by CityHash: %ld" % self.hash_added_keys)
-        print("Elements by Bounter: %ld\n" % self.bnt.cardinality())
+        print("CityHash relookups:   %ld" % self.hash_relookups)
+        print("CityHash collisions:  %ld" % self.hash_collisions)
+        print("CityHash ceilings:    %ld" % self.hash_ceilings)
+        print("CityHash overwrites:  %ld" % self.hash_overwrites)
+        print("CityHash added_keys:  %ld" % self.hash_added_keys)
+        print("Bounter HyperLogLog:  %ld\n" % self.bnt.cardinality())
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
         n_left_hash_funcs = self.hash_funcs_num
         for seed in self.hash_seeds:
-            i = cityhash(ngram, seed) % self.hash_size
+            i = cityhash(bytes(ngram), seed) % self.hash_size
             n_left_hash_funcs -= 1
             if self.ht[i][1] == ngram:
                 if (self.ht[i][0] < self.highfreq_threshold):
