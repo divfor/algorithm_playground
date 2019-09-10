@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import argparse
 import numpy as np
 from datetime import datetime
@@ -7,9 +8,17 @@ from HashTop import HashTop
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','u2'),('key',np.int)])
+    real = 10000
+    j, threshold = 0, 95*real/100
+    os.system("rm -rf bn.npy")
     h = HashTop("bn.npy", 1, 65535, m, dt)
-    for i in np.random.randint(0, 1000000, n):
+    #for i in np.random.randint(0, real, n):
+    for i in range(1,1+n):
         h.add(i)
+        j += 1
+        if h.bnt.cardinality() > threshold:
+            print("hit estimated when step is %ld" % j)
+            break
     h.close()
 
 def main():
