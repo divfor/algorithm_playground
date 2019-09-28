@@ -4,16 +4,22 @@ import argparse
 import numpy as np
 from datetime import datetime
 from HashBinTop import HashTop
+import random
+
+def get_random_bytes(n):
+    ASCII = "".join(chr(x) for x in range(255))
+    s ="".join(random.choice(ASCII) for _ in range(n+3))
+    return bytes(s,'utf-8')[:n]
 
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
-    dt = np.dtype([('counter','u2'),('key',np.int)])
-    real = 100000
+    dt = np.dtype([('counter','i2'),('n-gram',bytes, 4)])
     os.system("rm -rf bn.npy")
-    h = HashTop("bn.npy", 2, 65530, m, dt)
-    for i in np.random.randint(0, real, n):
-        h.add(i)
+    h = HashTop("bn.npy", 0, 65530, m, dt)
+    for i in range(n):
+        h.add(get_random_bytes(4))
     h.close()
+    return
     nb = h.ht
     for d in nb:
         if abs(d[0]) >=65530:

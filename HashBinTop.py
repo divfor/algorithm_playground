@@ -70,12 +70,24 @@ class HashTop(object):
 
     def close(self):
         self.save()
+        self.summary()
+    
+    def summary(self):
+        k, n, m = self.hash_funcs_num, self.bnt.cardinality(), self.hash_size
+        b, colname = self.ht, self.ht.dtype.names[1]
+        # Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
+        avg_out_rate = np.power(n/m, k)/(k+3)
+        noSeat = int(n * avg_out_rate)
+        e = n - noSeat
+        r = m - len(b[b[colname] == b''])
         print("CityHash relookups:   %ld" % self.hash_relookups)
-        print("CityHash collisions:  %ld" % self.hash_collisions)
+        print("CityHash collisions:  %ld (est. %ld)" % (self.hash_collisions, noSeat))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
         print("CityHash overwrites:  %ld" % self.hash_overwrites)
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
-        print("Bounter HyperLogLog:  %ld\n" % self.bnt.cardinality())
+        print("Bounter HyperLogLog:  %ld" % n)
+        print("Estimated loadfactor: %ld / %ld = %.4f" % (e, m, e/m))
+        print("Actual loadfactor:    %ld / %ld = %.4f\n" % (r, m, r/m))
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
@@ -88,7 +100,7 @@ class HashTop(object):
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
             # hash bucket is not in use
-            if self.ht[i][1] == 0:
+            if self.ht[i][1] == b'':
                 self.hash_added_keys += 1
                 self.ht[i] = (step, ngram)
                 break
@@ -108,8 +120,7 @@ class HashTop(object):
                 continue
             # hash bucket is under low-freq-protection
             self.ht[i][0] += step
-            if self.ht[i][0] == 0:
-                self.hash_overwrites += 1 # kick out low-freq ngram
-                self.ht[i][1] = ngram
+            self.ht[i][1] = ngram
+            self.hash_overwrites += 1 # ngram replaced
             break
 
