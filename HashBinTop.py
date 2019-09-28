@@ -123,6 +123,6 @@ class HashTop(object):
                 continue
             self.ht[i][0] += step
             self.ht[i][1] = ngram
-            self.hash_overwrites += 1 # ngram replaced
+            self.hash_overwrites += 1 # ngram replaced in latest position
             break
 
