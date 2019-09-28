@@ -13,11 +13,11 @@ def get_random_bytes(n):
 
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
-    dt = np.dtype([('counter','i2'),('n-gram',bytes, 4)])
+    dt = np.dtype([('counter','i2'),('n-gram',bytes, 5)])
     os.system("rm -rf bn.npy")
     h = HashTop("bn.npy", 0, 65530, m, dt)
     for i in range(n):
-        h.add(get_random_bytes(4))
+        h.add(get_random_bytes(5))
     h.close()
     return
     nb = h.ht

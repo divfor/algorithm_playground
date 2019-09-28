@@ -119,6 +119,8 @@ class HashTop(object):
                 self.hash_relookups += 1
                 continue
             # hash bucket is under low-freq-protection
+            if n_left_hash_funcs > 0:
+                continue
             self.ht[i][0] += step
             self.ht[i][1] = ngram
             self.hash_overwrites += 1 # ngram replaced
