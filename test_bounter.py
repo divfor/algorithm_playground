@@ -7,15 +7,15 @@ from HashBinTop import HashTop
 import random
 
 def get_random_bytes(n):
-    ASCII = "".join(chr(x) for x in range(255))
+    ASCII = "".join(chr(x) for x in range(64))
     s ="".join(random.choice(ASCII) for _ in range(n+3))
-    return bytes(s,'utf-8')[:n]
+    return bytes(s,'ascii')[:n]
 
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes, 4)])
     os.system("rm -rf bn.npy")
-    h = HashTop("bn.npy", 1, 65530, m, dt)
+    h = HashTop("bn.npy", 0, 65530, m, dt)
     for i in range(n):
         h.add(get_random_bytes(4))
     h.close()

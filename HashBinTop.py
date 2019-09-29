@@ -83,15 +83,16 @@ class HashTop(object):
         e = n - noSeat
         r = m - len(b[b[colname] == b''])
         print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq_threshold, self.highfreq_threshold, self.hash_funcs_num))
-        print("CityHash collide rate:%.8f%%)" % p*100)
+        print("CityHash collide rate:%.12f %%" % (p*100))
         print("CityHash collisions:  %ld (%ld estimated)" % (self.hash_collisions, noSeat))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
         print("CityHash relookups:   %ld" % self.hash_relookups)
         print("CityHash overwrites:  %ld" % self.hash_overwrites)
+        print("CityHash add_tries:   %ld" % self.hash_add_tries)
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
         print("Bounter HyperLogLog:  %ld" % n)
-        print("Estimated loadfactor: %ld / %ld = %.4f" % (e, m, e/m))
-        print("Actual loadfactor:    %ld / %ld = %.4f\n" % (r, m, r/m))
+        print("Estimated loadfactor: %ld / %ld = %.6f" % (e, m, e/m))
+        print("Actual loadfactor:    %ld / %ld = %.6f\n" % (r, m, r/m))
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
@@ -119,7 +120,7 @@ class HashTop(object):
             # bucket is owned by others:
             if absc <= self.lowfreq_threshold:
                 if i_ow < 0 or n_ow > absc:
-                    i_ow, n_ow = i, absc
+                    i_ow, n_ow, step_ow = i, absc, step
             if n_left_hash_funcs > 0:
                 self.hash_relookups += 1
                 continue
@@ -127,7 +128,7 @@ class HashTop(object):
             if i_ow == -1:
                 self.hash_collisions += 1
             else:
-                self.ht[i_ow][0] += step
+                self.ht[i_ow][0] += step_ow
                 self.ht[i_ow][1] = ngram
                 self.hash_overwrites += 1
             break
