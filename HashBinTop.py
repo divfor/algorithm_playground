@@ -75,17 +75,18 @@ class HashTop(object):
     def summary(self):
         k, n, m = self.hash_funcs_num, self.bnt.cardinality(), self.hash_size
         b, colname = self.ht, self.ht.dtype.names[1]
-        # Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
+        # CollisionOut_Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
         p0 = np.power(n/m, k)/(k+1)
-        avg_out_rate = (np.power(1+4*k*p0, 0.5) - 1) / (2*k)
-        #avg_out_rate = np.power(n/m, k)/(k+3)
-        noSeat = int(n * avg_out_rate)
+        # p0/p == (N/m)^k/(n/m)^k = (1+p)^k => p ~= (sqrt(1+4k*p0)-1)/(2k)
+        p = (np.power(1+4*k*p0, 0.5) - 1) / (2*k)
+        noSeat = int(n * p)
         e = n - noSeat
         r = m - len(b[b[colname] == b''])
         print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq_threshold, self.highfreq_threshold, self.hash_funcs_num))
-        print("CityHash relookups:   %ld" % self.hash_relookups)
-        print("CityHash collisions:  %ld (%ld estimated by collision rate %.8f%%)" % (self.hash_collisions, noSeat, avg_out_rate*100))
+        print("CityHash collide rate:%.8f%%)" % p*100)
+        print("CityHash collisions:  %ld (%ld estimated)" % (self.hash_collisions, noSeat))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
+        print("CityHash relookups:   %ld" % self.hash_relookups)
         print("CityHash overwrites:  %ld" % self.hash_overwrites)
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
         print("Bounter HyperLogLog:  %ld" % n)
