@@ -78,12 +78,12 @@ class HashTop(object):
         # CollisionOut_Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
         p0 = np.power(n/m, k)/(k+1)
         # p0/p == (N/m)^k/(n/m)^k = (1+p)^k => p ~= (sqrt(1+4k*p0)-1)/(2k)
-        p = (np.power(1+4*k*p0, 0.5) - 1) / (2*k)
+        p = (np.sqrt(1 + 4*k*p0) - 1) / (2*k)
         noSeat = int(n * p)
         e = n - noSeat
         r = m - len(b[b[colname] == b''])
         print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq_threshold, self.highfreq_threshold, self.hash_funcs_num))
-        print("CityHash collide rate:%.12f %%" % (p*100))
+        print("CityHash collide rate:%.12f %%" % (100.0*p))
         print("CityHash collisions:  %ld (%ld estimated)" % (self.hash_collisions, noSeat))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
         print("CityHash relookups:   %ld" % self.hash_relookups)
@@ -106,7 +106,7 @@ class HashTop(object):
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
             # bucket is empty:
-            if self.ht[i][1] == b'':
+            if absc == 0 and self.ht[i][1] == b'':
                 self.hash_added_keys += 1
                 self.ht[i] = (step, ngram)
                 break
@@ -125,7 +125,7 @@ class HashTop(object):
                 self.hash_relookups += 1
                 continue
             # n_left_hash_funcs == 0:
-            if i_ow == -1:
+            if i_ow < 0:
                 self.hash_collisions += 1
             else:
                 self.ht[i_ow][0] += step_ow
