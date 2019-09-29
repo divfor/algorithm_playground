@@ -76,7 +76,9 @@ class HashTop(object):
         k, n, m = self.hash_funcs_num, self.bnt.cardinality(), self.hash_size
         b, colname = self.ht, self.ht.dtype.names[1]
         # Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
-        avg_out_rate = np.power(n/m, k)/(k+3)
+        p0 = np.power(n/m, k)/(k+1)
+        avg_out_rate = (np.power(1+4*k*p0, 0.5) - 1) / (2*k)
+        #avg_out_rate = np.power(n/m, k)/(k+3)
         noSeat = int(n * avg_out_rate)
         e = n - noSeat
         r = m - len(b[b[colname] == b''])
