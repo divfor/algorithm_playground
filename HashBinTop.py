@@ -101,19 +101,19 @@ class HashTop(object):
             step = 1 if 1 == (hv % 2) else -1
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
-            # hash bucket is not in use
+            # bucket is empty:
             if self.ht[i][1] == b'':
                 self.hash_added_keys += 1
                 self.ht[i] = (step, ngram)
                 break
-            # hash bucket is owned already
+            # bucket is owned:
             if self.ht[i][1] == ngram:
                 if (absc < self.highfreq_threshold):
                     self.ht[i][0] += step
                 else:
                     self.hash_ceilings += 1
                 break
-            # hash bucket is owned by others, try other buckets
+            # bucket is owned by others:
             if absc <= self.lowfreq_threshold:
                 if i_ow < 0 or n_ow > absc:
                     i_ow, n_ow = i, absc
@@ -121,11 +121,11 @@ class HashTop(object):
                 self.hash_relookups += 1
                 continue
             # n_left_hash_funcs == 0:
-            if i_ow >= 0:
+            if i_ow == -1:
+                self.hash_collisions += 1
+            else:
                 self.ht[i_ow][0] += step
                 self.ht[i_ow][1] = ngram
-                self.hash_overwrites += 1 # ngram replaced in latest position
-            else:
-                self.hash_collisions += 1 # tried all buckets and give up here
+                self.hash_overwrites += 1
             break
 
