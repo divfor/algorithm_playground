@@ -80,8 +80,9 @@ class HashTop(object):
         noSeat = int(n * avg_out_rate)
         e = n - noSeat
         r = m - len(b[b[colname] == b''])
+        print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq_threshold, self.highfreq_threshold, self.hash_funcs_num))
         print("CityHash relookups:   %ld" % self.hash_relookups)
-        print("CityHash collisions:  %ld (est. %ld)" % (self.hash_collisions, noSeat))
+        print("CityHash collisions:  %ld (%ld estimated by collision rate %.8f%%)" % (self.hash_collisions, noSeat, avg_out_rate*100))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
         print("CityHash overwrites:  %ld" % self.hash_overwrites)
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
