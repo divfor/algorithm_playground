@@ -11,6 +11,26 @@ def get_random_bytes(n):
     s ="".join(random.choice(ASCII) for _ in range(n+3))
     return bytes(s,'ascii')[:n]
 
+def text2hash(m,n):
+    filename = '/Users/fred/Downloads/netdata/web/normalTrafficTest.txt'
+    np.random.seed(datetime.now().microsecond)
+    dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
+    os.system("rm -rf bn.npy")
+    h = HashTop("bn.npy", 0, 10**8, m, dt)
+    f = open(filename, 'rb')
+    k = 0
+    for line in f.readlines():
+        sz = len(line)
+        if sz < 5: continue
+        for i in range(sz-3):
+            h.add(line[i:i+4])
+            k += 1
+            if k % 100000 == 0:
+                h.summary()
+        if n > 0 and k > n: break
+    h.close()
+    f.close()
+
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
@@ -26,7 +46,8 @@ def main():
     parser.add_argument("-n", "--uniq_size", type=int, help="allowed max items to add")
     args = parser.parse_args()
     m, n = int(args.hash_size), int(args.uniq_size)
-    pipeline_simulated(m, n)
+    #pipeline_simulated(m, n)
+    text2hash(m,n)
 
 if __name__ == '__main__':
     main()

@@ -106,7 +106,7 @@ class HashTop(object):
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
             # bucket is empty:
-            if absc == 0 and self.ht[i][1] == b'':
+            if self.ht[i][1] == b'':
                 self.hash_added_keys += 1
                 self.ht[i] = (step, ngram)
                 break
