@@ -93,6 +93,7 @@ class HashTop(object):
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
         n_left_hash_funcs = self.hash_funcs_num
+        i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
         for seed in self.hash_seeds:
             hv = cityhash(bytes(ngram), seed) % self.hash_size
             i = hv % self.hash_size
@@ -112,17 +113,18 @@ class HashTop(object):
                     self.hash_ceilings += 1
                 break
             # hash bucket is owned by others, try other buckets
-            if absc > self.lowfreq_threshold:
-                if n_left_hash_funcs == 0:
-                    self.hash_collisions += 1 # tried all buckets and give up here
-                    break
+            if absc <= self.lowfreq_threshold:
+                if i_ow < 0 or n_ow > absc:
+                    i_ow, n_ow = i, absc
+            if n_left_hash_funcs > 0:
                 self.hash_relookups += 1
                 continue
-            # hash bucket is under low-freq-protection
-            if n_left_hash_funcs > 0:
-                continue
-            self.ht[i][0] += step
-            self.ht[i][1] = ngram
-            self.hash_overwrites += 1 # ngram replaced in latest position
+            # n_left_hash_funcs == 0:
+            if i_ow >= 0:
+                self.ht[i_ow][0] += step
+                self.ht[i_ow][1] = ngram
+                self.hash_overwrites += 1 # ngram replaced in latest position
+            else:
+                self.hash_collisions += 1 # tried all buckets and give up here
             break
 
