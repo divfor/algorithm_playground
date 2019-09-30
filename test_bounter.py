@@ -12,11 +12,11 @@ def get_random_bytes(n):
     return bytes(s,'ascii')[:n]
 
 def text2hash(m,n):
-    filename = '/Users/fred/Downloads/netdata/web/normalTrafficTest.txt'
+    filename = '/Users/fh0375/Downloads/netdata/web/normalTrafficTraining.txt'
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
     os.system("rm -rf bn.npy")
-    h = HashTop("bn.npy", 0, 10**8, m, dt)
+    h = HashTop("bn.npy", 10, 10**8, m, dt)
     f = open(filename, 'rb')
     k = 0
     for line in f.readlines():
@@ -35,7 +35,7 @@ def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
     os.system("rm -rf bn.npy")
-    h = HashTop("bn.npy", 1, 65530, m, dt)
+    h = HashTop("bn.npy", 10, 10**8, m, dt)
     for i in range(n):
         h.add(get_random_bytes(4))
     h.close()

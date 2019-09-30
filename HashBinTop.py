@@ -97,6 +97,8 @@ class HashTop(object):
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
+        door = 0 if self.hash_added_keys < 10 else self.hash_overwrites // self.hash_added_keys
+        door += self.lowfreq_threshold + 1
         n_left_hash_funcs = self.hash_funcs_num
         i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
         for seed in self.hash_seeds:
@@ -118,7 +120,7 @@ class HashTop(object):
                     self.hash_ceilings += 1
                 break
             # bucket is owned by others:
-            if absc <= self.lowfreq_threshold:
+            if absc < door:
                 if i_ow < 0 or n_ow > absc:
                     i_ow, n_ow, step_ow = i, absc, step
             if n_left_hash_funcs > 0:
