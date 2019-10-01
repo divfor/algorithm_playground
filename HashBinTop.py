@@ -8,6 +8,7 @@
 from cityhash import CityHash64WithSeed as cityhash
 from bounter import bounter
 import numpy as np
+import pandas as pd
 
 class HashTop(object):
     '''
@@ -23,14 +24,17 @@ class HashTop(object):
         self.hash_dtype = hash_dtype
         self.hash_size = hash_size
         self.hash_dumpfile = dumpfile
-        self.lowfreq_threshold = lowfreq_threshold
-        self.highfreq_threshold = highfreq_threshold
+        self.lowfreq = lowfreq_threshold
+        self.door = lowfreq_threshold
+        self.highfreq = highfreq_threshold
         self.hash_add_tries = 0 # sum of hasd-add calls
         self.hash_added_keys = 0 # num of buckets in use
         self.hash_relookups = 0 # sum of re-lookups of all hash-add calls
         self.hash_collisions = 0 # sum of hash-add calls which fail on all re-lookups
         self.hash_ceilings = 0 # sum of hash-add calls which counter overflows highfreq_threshold
         self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
+        self.hash_added_tries = 0
+        self.p = 1 - np.power(0.05, 1.0/self.lowfreq)
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
         self.bnt = bounter(need_counts=False) # use HLL algorithm only
         self.bnt_count = 0
@@ -78,27 +82,37 @@ class HashTop(object):
         # CollisionOut_Prob(N) fix-factor: 1/(k+1) when sum(P(i)^k), i=1,2,3,...,N
         p0 = np.power(n/m, k)/(k+1)
         # p0/p == (N/m)^k/(n/m)^k = (1+p)^k => p ~= (sqrt(1+4k*p0)-1)/(2k)
-        p = (np.sqrt(1 + 4*k*p0) - 1) / (2*k)
+        p = (np.sqrt(1 + 4*k*p0) - 1)/(2*k)
+        p = min(max(0.0,p),1.0)
         noSeat = int(n * p)
         e = n - noSeat
-        r = m - len(b[b[colname] == b''])
-        print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq_threshold, self.highfreq_threshold, self.hash_funcs_num))
+        r = self.hash_added_keys # m - len(b[b[colname] == b''])
+        #t = (self.hash_overwrites - self.hash_owreductions) / max(1, (self.hash_added_keys - self.hash_bucketholds))
+        t = self.hash_overwrites / self.hash_added_keys
+        all = abs(b[b['n-gram'] != b'']['counter'])
+        mean, std = np.mean(all), np.std(all)
+        part = all[all < self.door]
+        pmean, pstd, pcent = np.mean(part), np.std(part), len(part)/len(all)
+        #cmean, cstd = np.sqrt(t*(2/3.145926)), np.sqrt(t*(1-2/3.1415926))
+        print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq, self.highfreq, self.hash_funcs_num))
         print("CityHash collide rate:%.12f %%" % (100.0*p))
         print("CityHash collisions:  %ld (%ld estimated)" % (self.hash_collisions, noSeat))
         print("CityHash ceilings:    %ld" % self.hash_ceilings)
         print("CityHash relookups:   %ld" % self.hash_relookups)
         print("CityHash overwrites:  %ld" % self.hash_overwrites)
+        print("CityHash added_tries: %ld" % self.hash_added_tries)
         print("CityHash add_tries:   %ld" % self.hash_add_tries)
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
         print("Bounter HyperLogLog:  %ld" % n)
         print("Estimated loadfactor: %ld / %ld = %.6f" % (e, m, e/m))
         print("Actual loadfactor:    %ld / %ld = %.6f\n" % (r, m, r/m))
+        print("Counter std/mean/door: %.2f/%.2f/%ld, T: %.2f, std/T: %.4f, std/sqrt(T): %.8f" % (std, mean, self.door, t, std/t, std/np.sqrt(t)))
+        print("Counter pstd/pmean/pcent: %.2f/%.2f/%.4f, T: %.2f, pstd/T: %.4f, pstd/sqrt(T): %.8f" % (pstd, pmean, pcent, t, pstd/t, pstd/np.sqrt(t)))
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
-        door = 0 if self.hash_added_keys < 10 else self.hash_overwrites // self.hash_added_keys
-        door += self.lowfreq_threshold + 1
+        self.door = max(2, self.hash_added_tries // (1 + 8 * self.hash_added_keys))
         n_left_hash_funcs = self.hash_funcs_num
         i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
         for seed in self.hash_seeds:
@@ -110,28 +124,32 @@ class HashTop(object):
             # bucket is empty:
             if self.ht[i][1] == b'':
                 self.hash_added_keys += 1
+                self.hash_added_tries += 1
                 self.ht[i] = (step, ngram)
                 break
             # bucket is owned:
             if self.ht[i][1] == ngram:
-                if (absc < self.highfreq_threshold):
+                if (absc < self.highfreq):
                     self.ht[i][0] += step
+                    self.hash_added_tries += 1
                 else:
                     self.hash_ceilings += 1
                 break
             # bucket is owned by others:
-            if absc < door:
-                if i_ow < 0 or n_ow > absc:
+            if absc < self.door:
+                if i_ow < 0 or absc < n_ow:
                     i_ow, n_ow, step_ow = i, absc, step
             if n_left_hash_funcs > 0:
-                self.hash_relookups += 1
                 continue
             # n_left_hash_funcs == 0:
+            self.hash_relookups += 1
             if i_ow < 0:
                 self.hash_collisions += 1
             else:
                 self.ht[i_ow][0] += step_ow
-                self.ht[i_ow][1] = ngram
-                self.hash_overwrites += 1
+                self.hash_added_tries += 1
+                if np.random.random() < self.p:
+                    self.ht[i_ow][1] = ngram
+                    self.hash_overwrites += 1
             break
 

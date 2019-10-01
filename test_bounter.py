@@ -12,7 +12,7 @@ def get_random_bytes(n):
     return bytes(s,'ascii')[:n]
 
 def text2hash(m,n):
-    filename = '/Users/fh0375/Downloads/netdata/web/normalTrafficTraining.txt'
+    filename = '../data/netdata/web/normalTrafficTraining.txt'
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
     os.system("rm -rf bn.npy")
