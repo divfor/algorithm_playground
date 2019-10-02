@@ -141,14 +141,14 @@ class HashTop(object):
             if n_left_hash_funcs > 0:
                 continue
             # n_left_hash_funcs == 0:
-            self.hash_relookups += 1
             if i_ow < 0:
                 self.hash_collisions += 1
-            else:
-                self.ht[i_ow][0] += step_ow
-                self.hash_added_tries += 1
-                if np.random.random() < self.p:
-                    self.ht[i_ow][1] = ngram
-                    self.hash_overwrites += 1
+                break
+            self.hash_relookups += 1
+            self.ht[i_ow][0] += step_ow
+            self.hash_added_tries += 1
+            if np.random.random() < self.p:
+                self.hash_overwrites += 1
+                self.ht[i_ow][1] = ngram
             break
 
