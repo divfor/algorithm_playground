@@ -2,8 +2,10 @@
 import os
 import argparse
 import numpy as np
+import pandas as pd
 from datetime import datetime
 from HashBinTop import HashTop
+from binascii import unhexlify
 import random
 
 def get_random_bytes(n):
@@ -13,6 +15,9 @@ def get_random_bytes(n):
 
 def text2hash(m,n):
     filename = '../data/netdata/web/normalTrafficTraining.txt'
+    #filename = '../data/netdata/hyt/netdata.txt'
+    #filename = '../data/netdata/hyt/log.pcap.1568089974.csv'
+    #d = pd.read_csv(filename)
     np.random.seed(datetime.now().microsecond)
     dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
     os.system("rm -rf bn.npy")
@@ -20,6 +25,8 @@ def text2hash(m,n):
     f = open(filename, 'rb')
     k = 0
     for line in f.readlines():
+    #for ln in d['payload']:
+        #line = unhexlify(ln)
         sz = len(line)
         if sz < 5: continue
         for i in range(sz-3):
