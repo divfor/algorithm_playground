@@ -34,7 +34,7 @@ class HashTop(object):
         self.hash_ceilings = 0 # sum of hash-add calls which counter overflows highfreq_threshold
         self.hash_overwrites = 0 # num of hash-add calls which key overwrites another one and counter resets to 1
         self.hash_added_tries = 0
-        self.p = 1 - np.power(0.05, 1.0/self.lowfreq)
+        self.p = 1.0/self.lowfreq #1 - np.power(0.5, 1.0/self.lowfreq)
         self.hash_counter_lost = 0 # sum of counters when key is overwritten
         self.bnt = bounter(need_counts=False) # use HLL algorithm only
         self.bnt_count = 0
@@ -87,8 +87,7 @@ class HashTop(object):
         noSeat = int(n * p)
         e = n - noSeat
         r = self.hash_added_keys # m - len(b[b[colname] == b''])
-        #t = (self.hash_overwrites - self.hash_owreductions) / max(1, (self.hash_added_keys - self.hash_bucketholds))
-        t = self.hash_overwrites / self.hash_added_keys
+        #t = self.hash_overwrites / self.hash_added_keys
         all = abs(b[b['n-gram'] != b'']['counter'])
         mean, std = np.mean(all), np.std(all)
         part = all[all < self.door]
@@ -105,14 +104,14 @@ class HashTop(object):
         print("CityHash added_keys:  %ld" % self.hash_added_keys)
         print("Bounter HyperLogLog:  %ld" % n)
         print("Estimated loadfactor: %ld / %ld = %.6f" % (e, m, e/m))
-        print("Actual loadfactor:    %ld / %ld = %.6f\n" % (r, m, r/m))
-        print("Counter std/mean/door: %.2f/%.2f/%ld, T: %.2f, std/T: %.4f, std/sqrt(T): %.8f" % (std, mean, self.door, t, std/t, std/np.sqrt(t)))
-        print("Counter pstd/pmean/pcent: %.2f/%.2f/%.4f, T: %.2f, pstd/T: %.4f, pstd/sqrt(T): %.8f" % (pstd, pmean, pcent, t, pstd/t, pstd/np.sqrt(t)))
+        print("Actual loadfactor:    %ld / %ld = %.6f" % (r, m, r/m))
+        print("CityHash all counters >> std: %.2f, mean/door: %.2f/%ld, p_overwrite: %.4f" % (std, mean, self.door, self.p))
+        print("CityHash overwritable >> std: %.2f, mean/door: %.2f/%ld, ow_percent: %.4f\n" % (pstd, pmean, self.door, pcent))
 
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
-        self.door = max(2, self.hash_added_tries // (1 + 8 * self.hash_added_keys))
+        self.door = max(2, self.hash_added_tries // (1 + self.hash_added_keys))
         n_left_hash_funcs = self.hash_funcs_num
         i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
         for seed in self.hash_seeds:

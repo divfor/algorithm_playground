@@ -30,6 +30,8 @@ def text2hash(m,n):
         if n > 0 and k > n: break
     h.close()
     f.close()
+    os.system("mv bn.npy bn.newest.npy")
+
 
 def pipeline_simulated (m=10000007,n=1000):
     np.random.seed(datetime.now().microsecond)
