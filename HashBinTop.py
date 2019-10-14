@@ -108,6 +108,13 @@ class HashTop(object):
         print("CityHash all counters >> std: %.2f, mean/door: %.2f/%ld, p_overwrite: %.4f" % (std, mean, self.door, self.p))
         print("CityHash overwritable >> std: %.2f, mean/door: %.2f/%ld, ow_percent: %.4f\n" % (pstd, pmean, self.door, pcent))
 
+    def get(self, ngram): # bytes type
+        for seed in self.hash_seeds:
+            i = cityhash(bytes(ngram), seed) % self.hash_size
+            if self.ht[i][1] == ngram:
+                return abs(self.ht[i][0])
+        return 0
+
     def add(self, ngram): # bytes type
         self.hash_add_tries += 1
         self.bnt.update([bytes(ngram)])
@@ -115,9 +122,10 @@ class HashTop(object):
         n_left_hash_funcs = self.hash_funcs_num
         i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
         for seed in self.hash_seeds:
-            hv = cityhash(bytes(ngram), seed) % self.hash_size
+            hv = cityhash(bytes(ngram), seed)
             i = hv % self.hash_size
-            step = 1 if 1 == (hv % 2) else -1
+            sign = ((hv >> 32) ^ hv) % 2
+            step = 1 if 1 == sign else -1
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
             # bucket is empty:
