@@ -15,6 +15,7 @@ def get_random_bytes(n):
 
 def text2hash(m,n):
     filename = '../data/netdata/web/normalTrafficTraining.txt'
+    #filename = '../data/netdata/web/honeypot.json'
     #filename = '../data/netdata/hyt/netdata.txt'
     #filename = '../data/netdata/hyt/log.pcap.1568089974.csv'
     #d = pd.read_csv(filename)
