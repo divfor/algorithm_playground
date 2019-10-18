@@ -161,7 +161,8 @@ class HashTop(object):
             break
 
     def update(self, hash_tables):
-        for h in hash_tables:
+        for table in hash_tables:
+            h = table.ht
             ht = h[h[1] != b'']
             for i in ht:
                 self.add(i[1], abs(i[0])
