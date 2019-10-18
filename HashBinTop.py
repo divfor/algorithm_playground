@@ -19,8 +19,8 @@ class HashTop(object):
         hash_dtype : example - numpy.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])
     '''
     def __init__(self, dumpfile = None, 
-                lowfreq_threshold = 0, highfreq_threshold = 65535, hash_size = 7+10**8,
-                hash_dtype = np.dtype([('counter', 'u2'), ('n-gram', bytes, 5)])):
+                lowfreq_threshold = 10, highfreq_threshold = 10**8, hash_size = 7+10**8,
+                hash_dtype = np.dtype([('counter', 'i4'), ('n-gram', bytes, 4)])):
         self.hash_dtype = hash_dtype
         self.hash_size = hash_size
         self.hash_dumpfile = dumpfile
@@ -115,8 +115,8 @@ class HashTop(object):
                 return abs(self.ht[i][0])
         return 0
 
-    def add(self, ngram): # bytes type
-        self.hash_add_tries += 1
+    def add(self, ngram, count=1): # bytes type
+        self.hash_add_tries += count
         self.bnt.update([bytes(ngram)])
         self.door = max(2, self.hash_added_tries // (1 + self.hash_added_keys))
         n_left_hash_funcs = self.hash_funcs_num
@@ -125,20 +125,20 @@ class HashTop(object):
             hv = cityhash(bytes(ngram), seed)
             i = hv % self.hash_size
             sign = ((hv >> 32) ^ hv) % 2
-            step = 1 if 1 == sign else -1
+            step = count if 1 == sign else -count
             absc = abs(self.ht[i][0])
             n_left_hash_funcs -= 1
             # bucket is empty:
             if self.ht[i][1] == b'':
                 self.hash_added_keys += 1
-                self.hash_added_tries += 1
+                self.hash_added_tries += count
                 self.ht[i] = (step, ngram)
                 break
             # bucket is owned:
             if self.ht[i][1] == ngram:
                 if (absc < self.highfreq):
                     self.ht[i][0] += step
-                    self.hash_added_tries += 1
+                    self.hash_added_tries += count
                 else:
                     self.hash_ceilings += 1
                 break
@@ -154,9 +154,14 @@ class HashTop(object):
                 break
             self.hash_relookups += 1
             self.ht[i_ow][0] += step_ow
-            self.hash_added_tries += 1
+            self.hash_added_tries += count
             if np.random.random() < self.p:
                 self.hash_overwrites += 1
                 self.ht[i_ow][1] = ngram
             break
 
+    def update(self, hash_tables):
+        for h in hash_tables:
+            ht = h[h[1] != b'']
+            for i in ht:
+                self.add(i[1], abs(i[0])
