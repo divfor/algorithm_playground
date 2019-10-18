@@ -8,6 +8,16 @@ from HashBinTop import HashTop
 from binascii import unhexlify
 import random
 
+
+def hash_merge(merged_npy, train_saved_npy):
+    dt = np.dtype([('counter','i4'),('n-gram',bytes,4)])
+    hash_tables = []
+    for filename in train_saved_npy:
+        hash_tables.append(HashTop(filename, 10, 10**8, 7+10**8, dt))
+    merged_ht = HashTop(merged_npy, 10, 10**8, 7+10**8, dt)
+    merged_ht.update(hash_tables)
+    merged_ht.close()
+
 def get_random_bytes(n):
     ASCII = "".join(chr(x) for x in range(32))
     s ="".join(random.choice(ASCII) for _ in range(n+3))
