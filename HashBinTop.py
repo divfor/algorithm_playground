@@ -165,4 +165,5 @@ class HashTop(object):
             h = table.ht
             ht = h[h[1] != b'']
             for i in ht:
-                self.add(i[1], abs(i[0])
+                self.add(i[1], abs(i[0]))
+

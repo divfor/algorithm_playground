@@ -66,8 +66,8 @@ def main():
     parser.add_argument("-n", "--uniq_size", type=int, help="allowed max items to add")
     args = parser.parse_args()
     m, n = int(args.hash_size), int(args.uniq_size)
-    #pipeline_simulated(m, n)
-    text2hash(m,n)
+    pipeline_simulated(m, n)
+    #text2hash(m,n)
 
 if __name__ == '__main__':
     main()
