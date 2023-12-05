@@ -42,6 +42,7 @@ class HashTop(object):
         self.hash_seeds = [2819948058, 5686873063, 1769651746, 8745608315, 2414950003, 
         3583714723, 1224464945, 2514535028] #np.random.randint(10**9,10**10,8)
         self.hash_funcs_num = len(self.hash_seeds)
+        self.hash_seat_tries = [ 0 for i in range(self.hash_funcs_num + 1) ] # +1 for no seat
 
         if dumpfile:
             self.ht = self.load(dumpfile)
@@ -94,19 +95,22 @@ class HashTop(object):
         pmean, pstd, pcent = np.mean(part), np.std(part), len(part)/len(all)
         #cmean, cstd = np.sqrt(t*(2/3.145926)), np.sqrt(t*(1-2/3.1415926))
         print("lowfreq: %ld, highfreq: %ld, num_hash_funcs: %d" % (self.lowfreq, self.highfreq, self.hash_funcs_num))
-        print("CityHash collide rate:%.12f %%" % (100.0*p))
-        print("CityHash collisions:  %ld (%ld estimated)" % (self.hash_collisions, noSeat))
-        print("CityHash ceilings:    %ld" % self.hash_ceilings)
-        print("CityHash relookups:   %ld" % self.hash_relookups)
-        print("CityHash overwrites:  %ld" % self.hash_overwrites)
-        print("CityHash added_tries: %ld" % self.hash_added_tries)
-        print("CityHash add_tries:   %ld" % self.hash_add_tries)
-        print("CityHash added_keys:  %ld" % self.hash_added_keys)
-        print("Bounter HyperLogLog:  %ld" % n)
-        print("Estimated loadfactor: %ld / %ld = %.6f" % (e, m, e/m))
-        print("Actual loadfactor:    %ld / %ld = %.6f" % (r, m, r/m))
+        print("CityHash collide rate:  %.12f %%" % (100.0*p))
+        print("CityHash collisions:    %ld (%ld estimated)" % (self.hash_collisions, noSeat))
+        print("CityHash ceilings:      %ld" % self.hash_ceilings)
+        print("CityHash relookups:     %ld" % self.hash_relookups)
+        print("CityHash overwrites:    %ld" % self.hash_overwrites)
+        print("CityHash added_tries:   %ld" % self.hash_added_tries)
+        print("CityHash add_tries:     %ld" % self.hash_add_tries)
+        print("CityHash added_keys:    %ld" % self.hash_added_keys)
+        print("Bounter HyperLogLog:    %ld" % n)
+        print("Estimated loadfactor:   %ld / %ld = %.6f" % (e, m, e/m))
+        print("Actual loadfactor:      %ld / %ld = %.6f" % (r, m, r/m))
         print("CityHash all counters >> std: %.2f, mean/door: %.2f/%ld, p_overwrite: %.4f" % (std, mean, self.door, self.p))
         print("CityHash overwritable >> std: %.2f, mean/door: %.2f/%ld, ow_percent: %.4f\n" % (pstd, pmean, self.door, pcent))
+        s = sum(self.hash_seat_tries)/100.0
+        for i, n in enumerate(self.hash_seat_tries):
+            print("Seating by Hash Funcs[%d]:  %ld - %.2f" % (i, n, n/s))
 
     def get(self, ngram): # bytes type
         for seed in self.hash_seeds:
@@ -121,6 +125,7 @@ class HashTop(object):
         self.door = max(2, self.hash_added_tries // (1 + self.hash_added_keys))
         n_left_hash_funcs = self.hash_funcs_num
         i_ow, n_ow = -1, -1 # remember lowest bucket for overwritting
+        seat = 0
         for seed in self.hash_seeds:
             hv = cityhash(bytes(ngram), seed)
             i = hv % self.hash_size
@@ -133,6 +138,7 @@ class HashTop(object):
                 self.hash_added_keys += 1
                 self.hash_added_tries += count
                 self.ht[i] = (step, ngram)
+                self.hash_seat_tries[seat] += 1
                 break
             # bucket is owned:
             if self.ht[i][1] == ngram:
@@ -141,16 +147,19 @@ class HashTop(object):
                     self.hash_added_tries += count
                 else:
                     self.hash_ceilings += 1
+                self.hash_seat_tries[seat] += 1
                 break
             # bucket is owned by others:
             if absc < self.door:
                 if i_ow < 0 or absc < n_ow:
-                    i_ow, n_ow, step_ow = i, absc, step
+                    i_ow, n_ow, step_ow, seat_ow = i, absc, step, seat
             if n_left_hash_funcs > 0:
+                seat += 1
                 continue
             # n_left_hash_funcs == 0:
             if i_ow < 0:
                 self.hash_collisions += 1
+                self.hash_seat_tries[-1] += 1
                 break
             self.hash_relookups += 1
             self.ht[i_ow][0] += step_ow
@@ -158,6 +167,9 @@ class HashTop(object):
             if np.random.random() < self.p:
                 self.hash_overwrites += 1
                 self.ht[i_ow][1] = ngram
+                self.hash_seat_tries[seat_ow] += 1
+            else:
+                self.hash_seat_tries[-1] += 1
             break
 
     def update(self, hash_tables):
@@ -166,4 +178,3 @@ class HashTop(object):
             ht = h[h[1] != b'']
             for i in ht:
                 self.add(i[1], abs(i[0]))
-
